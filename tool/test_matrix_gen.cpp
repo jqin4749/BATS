@@ -74,6 +74,19 @@ int main(){
     }
     myfile << "\n\t};\n";
 
+    myfile << "\n\nstatic uint8_t deg_list[N_BATCH] = {";
+    for(int j=0;j<N_BATCH;j++){
+        // int num = rand() % 64;
+        int num = 16;
+        while(num % TS != 0 || num ==0){
+            num = rand() % 64;
+        }
+        n = sprintf(buf,"%d,",num);
+        myfile << buf;
+    }
+    myfile << "};\n";
+
+
     myfile.close();
     return 0;
 

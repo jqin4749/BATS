@@ -82,7 +82,7 @@ $(TARGET_DIR) :
 
 FPGA :
 	aoc dev/myGEMM2.cl -o ../bin/myGEMM2 -I include -no-interleaving=default
-
+	rm -r ~/sopc_altera*
 FPGA-report :
 	aoc -c ./dev/$(TARGET_FPGA).cl -o ../bin/$(TARGET_FPGA) -I include	-report -no-interleaving=default
 

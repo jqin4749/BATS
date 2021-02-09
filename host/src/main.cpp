@@ -19,9 +19,10 @@ scoped_array<cl_kernel> kernel; // num_devices elements
 
 scoped_array<cl_mem> input_a_buf; // num_devices elements
 scoped_array<cl_mem> input_b_buf; // num_devices elements
+scoped_array<cl_mem> input_DE_buf; // num_devices elements
 scoped_array<cl_mem> output_buf; // num_devices elements
 
-scoped_array<scoped_aligned_ptr<uint8_t> > input_a, input_b; // num_devices elements
+scoped_array<scoped_aligned_ptr<uint8_t> > input_a, input_b, input_deg; // num_devices elements
 scoped_array<scoped_aligned_ptr<uint8_t> > output; // num_devices elements
 
 scoped_array<scoped_array<uint8_t> > ref_output; // num_devices elements
@@ -98,8 +99,14 @@ bool init_opencl()
 
   input_a_buf.reset(num_devices);
   input_b_buf.reset(num_devices);
+  input_DE_buf.reset(num_devices);
   output_buf.reset(num_devices);
 
+  input_a.reset(num_devices);
+  input_b.reset(num_devices);
+  input_deg.reset(num_devices);
+  output.reset(num_devices);
+  ref_output.reset(num_devices);
 
   for(unsigned i = 0; i < num_devices; ++i) {
     // Command queue.
@@ -121,18 +128,29 @@ bool init_opencl()
     }
     // Input buffers.
     input_a_buf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY,
-    PKT_SIZE*DEGREE * sizeof(uint8_t), NULL, &status);
+    INPUT_SIZE_A *DEGREE* sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for input A");
 
     input_b_buf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY,
-    BATCH_SIZE*DEGREE * sizeof(uint8_t), NULL, &status);
+    INPUT_SIZE_B*DEGREE* sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for input B");
 
+    input_DE_buf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY,
+    N_BATCH*sizeof(uint8_t), NULL, &status);
+    checkError(status, "Failed to create buffer for input DE");
     // Output buffer.
     output_buf[i] = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
-    PKT_SIZE*BATCH_SIZE * sizeof(uint8_t), NULL, &status);
+    OUTPUT_SIZE * sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for output");
     
+    
+    
+    input_a[i].reset(INPUT_SIZE_A*DEGREE);
+    input_b[i].reset(INPUT_SIZE_B*DEGREE);
+    input_deg[i].reset(N_BATCH);
+    output[i].reset(OUTPUT_SIZE);
+    ref_output[i].reset(OUTPUT_SIZE);
+
     }
   printf("Finished Initialization\n");
   return true;
@@ -143,48 +161,51 @@ void init_problem() {
   if(num_devices == 0) {
     checkError(-1, "No devices");
   }
-
-  input_a.reset(num_devices);
-  input_b.reset(num_devices);
-  output.reset(num_devices);
-  ref_output.reset(num_devices);
-
+  
+  
   // Generate input vectors A and B and the reference output consisting
   // of a total of N elements.
   // We create separate arrays for each device so that each device has an
   // aligned buffer.
   for(unsigned i = 0; i < num_devices; ++i) {
-    input_a[i].reset(PKT_SIZE*DEGREE);
-    input_b[i].reset(BATCH_SIZE*DEGREE);
-    output[i].reset(PKT_SIZE*BATCH_SIZE);
-    ref_output[i].reset(n_per_device[i]);
+    for (int b=0;b<N_BATCH;b++){
+      input_deg[i][b] = deg_list[b];
+    }
+
     int count=0;
-    for(int j=0;j<DEGREE;j++){
-      for(int jj=0;jj<PKT_SIZE;jj++){
-        input_a[i][count] = B[jj][j];
-        count++;
+    for(int b=0;b<N_BATCH;b++){
+      for(int j=0;j<DEGREE;j++){
+        for(int jj=0;jj<PKT_SIZE;jj++){
+          input_a[i][count] = B[jj][j];
+          count++;
+        }
       }
     }
     
     count = 0;
-    for(int j=0;j<BATCH_SIZE;j++){
-      for(int jj=0;jj<DEGREE;jj++){
-        input_b[i][count] = G[jj][j];
-        count++;
+    for(int b=0;b<N_BATCH;b++){
+      for(int j=0;j<BATCH_SIZE;j++){
+        for(int jj=0;jj<DEGREE;jj++){
+          input_b[i][count] = G[jj][j];
+          count++;
+        }
       }
     }
+    
+    for(int b=0;b<N_BATCH;b++){
+      for (int m=0; m<PKT_SIZE; m++) {
+          for (int n=0; n<BATCH_SIZE; n++) {
+              uint8_t acc = 0;
+              for (int k=0; k<DEGREE; k++) {
+                  acc ^= gf_mu_x86(input_a[i][k*PKT_SIZE + m],input_b[i][n*DEGREE + k]);
+              }
+              ref_output[i][n*PKT_SIZE + m + b*PKT_SIZE*BATCH_SIZE] = acc;
+              // printf("%d,",acc);
+          }
+      }
 
-    for (int m=0; m<PKT_SIZE; m++) {
-        for (int n=0; n<BATCH_SIZE; n++) {
-            uint8_t acc = 0;
-            for (int k=0; k<DEGREE; k++) {
-                acc ^= gf_mu_x86(input_a[i][k*PKT_SIZE + m],input_b[i][n*DEGREE + k]);
-            }
-            ref_output[i][n*PKT_SIZE + m] = acc;
-            // printf("%d,",acc);
-        }
     }
-    printf("\n");
+    
   }
 }
 
@@ -192,32 +213,34 @@ void init_problem() {
 
 void run() {
   cl_int status;
-
+ 
   const double start_time = getCurrentTimestamp();
 
   // Launch the problem for each device.
   scoped_array<cl_event> kernel_event(num_devices);
   scoped_array<cl_event> finish_event(num_devices);
-
+  cl_event write_event[3];
   for(unsigned i = 0; i < num_devices; ++i) {
 
 
     // Transfer inputs to each device. Each of the host buffers supplied to
     // clEnqueueWriteBuffer here is already aligned to ensure that DMA is used
     // for the host-to-device transfer.
-    cl_event write_event[2];
+    
     status = clEnqueueWriteBuffer(queue[i], input_a_buf[i], CL_FALSE,
-        0, PKT_SIZE*DEGREE * sizeof(uint8_t), input_a[i], 0, NULL, &write_event[0]);
+        0, INPUT_SIZE_A*DEGREE * sizeof(uint8_t), input_a[i], 0, NULL, &write_event[0]);
     checkError(status, "Failed to transfer input A");
 
     status = clEnqueueWriteBuffer(queue[i], input_b_buf[i], CL_FALSE,
-        0, BATCH_SIZE*DEGREE * sizeof(uint8_t), input_b[i], 0, NULL, &write_event[1]);
+        0, INPUT_SIZE_B*DEGREE * sizeof(uint8_t), input_b[i], 0, NULL, &write_event[1]);
     checkError(status, "Failed to transfer input B");
 
+    status = clEnqueueWriteBuffer(queue[i], input_DE_buf[i], CL_FALSE,
+        0, N_BATCH*sizeof(uint8_t), input_deg[i], 0, NULL, &write_event[2]);
+    checkError(status, "Failed to transfer input DE");
 
     // Set kernel arguments.
     unsigned argi = 0;
-
 
     status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &input_a_buf[i]);
     checkError(status, "Failed to set argument %d", argi - 1);
@@ -228,27 +251,27 @@ void run() {
     status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &output_buf[i]);
     checkError(status, "Failed to set argument %d", argi - 1);
 
+    status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &input_DE_buf[i]);
+    checkError(status, "Failed to set argument %d", argi - 1);
 
     // Enqueue kernel.
    
-    const size_t global[2] = { PKT_SIZE, BATCH_SIZE };
-    const size_t local[2] = { TS, TS };
+    const size_t global[3] = { PKT_SIZE, BATCH_SIZE, N_BATCH };
+    const size_t local[3] = { TS, TS, N_BATCH };
     // printf("Launching for device %d (%zd elements)\n", i, global_work_size);
 
 
-    status = clEnqueueNDRangeKernel(queue[i], kernel[i], 2, NULL,
+    status = clEnqueueNDRangeKernel(queue[i], kernel[i], 3, NULL,
         global, local, 2, write_event, &kernel_event[i]);
 
     checkError(status, "Failed to launch kernel");
 
     // Read the result. This the final operation.
     status = clEnqueueReadBuffer(queue[i], output_buf[i], CL_FALSE,
-        0, PKT_SIZE*BATCH_SIZE * sizeof(uint8_t), output[i], 1, &kernel_event[i], &finish_event[i]);
+        0, OUTPUT_SIZE * sizeof(uint8_t), output[i], 1, &kernel_event[i], &finish_event[i]);
 
     // Release local events.
-    clReleaseEvent(write_event[0]);
-    clReleaseEvent(write_event[1]);
-
+  
   }
 
   // Wait for all devices to finish.
@@ -263,8 +286,17 @@ void run() {
   for(unsigned i = 0; i < num_devices; ++i) {
     cl_ulong time_ns = getStartEndTime(kernel_event[i]);
     printf("Kernel time (device %d): %0.3f ms\n", i, double(time_ns) * 1e-6);
+
+    time_ns = getStartEndTime(write_event[0]);
+    printf("Write 1: %0.3f ms\n", i, double(time_ns) * 1e-6);
+    time_ns = getStartEndTime(write_event[1]);
+    printf("Write 2: %0.3f ms\n", i, double(time_ns) * 1e-6);
+    time_ns = getStartEndTime(finish_event[i]);
+    printf("Read: %0.3f ms\n", i, double(time_ns) * 1e-6);
   }
 
+  clReleaseEvent(write_event[0]);
+  clReleaseEvent(write_event[1]);
   // Release all events.
   for(unsigned i = 0; i < num_devices; ++i) {
     clReleaseEvent(kernel_event[i]);
@@ -273,15 +305,20 @@ void run() {
 
   // Verify results.
   bool pass = true;
+  int count=0;
   for(unsigned i = 0; i < num_devices && pass; ++i) {
-    for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE && pass; ++j) {
-      // printf("%d,%d\n",output[i][j],ref_output[i][j]);
-      if(output[i][j] != ref_output[i][j]) {
-        printf("Failed verification @ device %d, index %d\nOutput: %d\nReference: %d\n",
-            i, j, output[i][j], ref_output[i][j]);
-        pass = false;
+    for(int b=0;b<N_BATCH;b++){
+      for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE && pass; ++j) {
+        // printf("%d,%d\n",output[i][j],ref_output[i][j]);
+        if(output[i][count] != ref_output[i][count]) {
+          printf("Failed verification @ device %d, index %d\nOutput: %d\nReference: %d\n",
+              i, j, output[i][j], ref_output[i][j]);
+          pass = false;
+        }
+        count++;
       }
     }
+    
   }
 
   printf("\nVerification: %s\n", pass ? "PASS" : "FAIL");
@@ -335,7 +372,10 @@ int main(int argc, char **argv) {
   init_problem();
 
   // Run the kernel.
-  run();
+  for(int i=0;i<10;i++){
+    run();
+  }
+  
 
   // Free the resources allocated
   cleanup();
