@@ -55,7 +55,7 @@ CXX := arm-linux-gnueabihf-g++
 
 # Target
 TARGET := host
-TARGET_DIR := bin
+TARGET_DIR := ../bin
 TARGET_FPGA := myGEMM2
 # Directories
 INC_DIRS := ../common/inc ./include
@@ -81,14 +81,14 @@ $(TARGET_DIR) :
 	$(ECHO)mkdir $(TARGET_DIR)
 
 FPGA :
-	aoc dev/myGEMM2.cl -o bin/myGEMM2 -I include -no-interleaving=default
+	aoc dev/myGEMM2.cl -o ../bin/myGEMM2 -I include -no-interleaving=default
 
 FPGA-report :
-	aoc -c ./dev/$(TARGET_FPGA).cl -o ./bin/$(TARGET_FPGA) -I include	-report -no-interleaving=default
+	aoc -c ./dev/$(TARGET_FPGA).cl -o ../bin/$(TARGET_FPGA) -I include	-report -no-interleaving=default
 
 matrix-gen:
-	g++ ./tool/test_matrix_gen.cpp -I include -o ./bin/test_matrix_gen.out
-	./bin/test_matrix_gen.out
+	g++ ./tool/test_matrix_gen.cpp -I include -o ../bin/test_matrix_gen.out
+	../bin/test_matrix_gen.out
 	
 # Standard make targets
 clean :
