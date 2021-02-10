@@ -59,10 +59,10 @@ uint8_t gf_mu_x86(uint8_t a, uint8_t b) {
 __kernel
 // __attribute__((num_simd_work_items(SIMD_TS)))
 __attribute__((num_compute_units(CMP_UNIT)))
-__attribute((reqd_work_group_size(TS,TS,N_BATCH))) 
+__attribute((reqd_work_group_size(TS,TS,TS3))) 
 void myGEMM2(
             __global const uint8_t* restrict  A,
-            __global const uint8_t* restrict  B,
+            // __global const uint8_t* restrict  B,
             __global uint8_t* restrict C,
             __global const uint8_t* restrict DEGREE_ ) {
     
@@ -81,9 +81,9 @@ void myGEMM2(
     degrees[batch_id] = DEGREE_[batch_id];
     barrier(CLK_LOCAL_MEM_FENCE);
     int deg_offset;
-    int my_deg = degrees[batch_id];
+    uint8_t my_deg = degrees[batch_id];
     
-    #pragma unroll
+    #pragma ii 1
     for(int i=0;i<batch_id;i++){
         deg_offset += degrees[i];
     }
@@ -91,16 +91,18 @@ void myGEMM2(
     uint8_t acc = 0;
     
     // Loop over all tiles
-    const int numTiles = my_deg/TS;
+    int numTiles = my_deg/TS;
     barrier(CLK_LOCAL_MEM_FENCE);
-    #pragma unroll
+    #pragma ii 1
     for (int t=0; t<numTiles; t++) {
  
         // Load one tile of A and B into local memory
         const int tiledRow = TS*t + row;
         const int tiledCol = TS*t + col;
         Asub[row][col] = A[tiledCol*PKT_SIZE + globalRow + PKT_SIZE*deg_offset]; // swap row and col for Asub and Bsub
-        Bsub[col][row] = B[globalCol*my_deg + tiledRow + deg_offset*BATCH_SIZE];
+        // Bsub[col][row] = B[globalCol*my_deg + tiledRow + deg_offset*BATCH_SIZE];
+        Bsub[col][row] = 1;
+
  
         // Synchronise to make sure the tile is loaded
         barrier(CLK_LOCAL_MEM_FENCE);

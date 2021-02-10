@@ -89,6 +89,7 @@ FPGA-report :
 matrix-gen:
 	g++ ./tool/test_matrix_gen.cpp -I include -o ../bin/test_matrix_gen.out
 	../bin/test_matrix_gen.out
+	rm ../bin/test_matrix_gen.out
 	
 # Standard make targets
 clean :

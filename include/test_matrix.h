@@ -1028,7 +1028,7 @@ static uint8_t B[PKT_SIZE][DEGREE] = {
 	};
 
 
-static uint8_t G[PKT_SIZE][DEGREE] = {
+static uint8_t G[DEGREE][BATCH_SIZE] = {
 		{142,94,166,139,},
 		{51,98,226,159,},
 		{128,56,157,225,},
@@ -2076,4 +2076,4 @@ static uint8_t res[PKT_SIZE][BATCH_SIZE] = {
 	};
 
 
-static uint8_t deg_list[N_BATCH] = {16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,};
+static uint8_t deg_list[N_BATCH] = {16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,};

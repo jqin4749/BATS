@@ -18,6 +18,8 @@ int main(){
     srand(SEED-1);
     ofstream myfile;
     myfile.open ("./include/test_matrix.h");
+
+
     myfile << "#include \"config.h\"\n\nstatic uint8_t B[PKT_SIZE][DEGREE] = {";
     // print arrays
     // B (PKT_SIZE,DEGREE)
@@ -37,7 +39,7 @@ int main(){
     // G (DEGREE,BATCH_SIZE)
     uint8_t G[DEGREE][BATCH_SIZE];
     srand(SEED);
-    myfile << "\n\nstatic uint8_t G[PKT_SIZE][DEGREE] = {";
+    myfile << "\n\nstatic uint8_t G[DEGREE][BATCH_SIZE] = {";
     for(int j=0;j<DEGREE;j++){
         myfile << "\n\t\t{";
         for(int i=0;i<BATCH_SIZE;i++){
@@ -85,6 +87,7 @@ int main(){
         myfile << buf;
     }
     myfile << "};\n";
+
 
 
     myfile.close();

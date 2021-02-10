@@ -167,6 +167,7 @@ void init_problem() {
   // of a total of N elements.
   // We create separate arrays for each device so that each device has an
   // aligned buffer.
+#ifndef CHANGING_D
   for(unsigned i = 0; i < num_devices; ++i) {
     for (int b=0;b<N_BATCH;b++){
       input_deg[i][b] = deg_list[b];
@@ -205,8 +206,59 @@ void init_problem() {
       }
 
     }
+  }
+#else
+  for(unsigned i = 0; i < num_devices; ++i) {
+    for (int b=0;b<N_BATCH;b++){
+      input_deg[i][b] = deg_list[b];
+    }
+
+    int count=0;
+    for(int b=0;b<N_BATCH;b++){
+      int d = deg_list[b];
+      for(int j=0;j<d;j++){
+        for(int jj=0;jj<PKT_SIZE;jj++){
+          input_a[i][count] = B[jj][j];
+          count++;
+        }
+      }
+    }
+    
+    count = 0;
+    for(int b=0;b<N_BATCH;b++){
+      int d = deg_list[b];
+      for(int j=0;j<BATCH_SIZE;j++){
+        for(int jj=0;jj<d;jj++){
+          input_b[i][count] = G[jj][j];
+          count++;
+        }
+      }
+    }
+    
+    // got the offsets
+    int offset_list[N_BATCH]={0};
+    for(int j=0;j<N_BATCH;j++){
+      for(int jj=0;jj<j;jj++){
+        offset_list[j] += deg_list[jj];
+      }
+    }
+
+    for(int b=0;b<N_BATCH;b++){
+      int d = deg_list[b];
+      for (int m=0; m<PKT_SIZE; m++) {
+          for (int n=0; n<BATCH_SIZE; n++) {
+              uint8_t acc = 0;
+              for (int k=0; k<d; k++) {
+                  acc ^= gf_mu_x86(input_a[i][k*PKT_SIZE + m + PKT_SIZE*offset_list[b]],input_b[i][n*d + k + BATCH_SIZE*offset_list[b]]);
+              }
+              ref_output[i][n*PKT_SIZE + m + b*PKT_SIZE*BATCH_SIZE] = acc;
+              // printf("%d,",acc);
+          }
+      }
+    }
     
   }
+#endif
 }
 
 
@@ -219,7 +271,7 @@ void run() {
   // Launch the problem for each device.
   scoped_array<cl_event> kernel_event(num_devices);
   scoped_array<cl_event> finish_event(num_devices);
-  cl_event write_event[3];
+  cl_event write_event[2];
   for(unsigned i = 0; i < num_devices; ++i) {
 
 
@@ -231,12 +283,12 @@ void run() {
         0, INPUT_SIZE_A*DEGREE * sizeof(uint8_t), input_a[i], 0, NULL, &write_event[0]);
     checkError(status, "Failed to transfer input A");
 
-    status = clEnqueueWriteBuffer(queue[i], input_b_buf[i], CL_FALSE,
-        0, INPUT_SIZE_B*DEGREE * sizeof(uint8_t), input_b[i], 0, NULL, &write_event[1]);
-    checkError(status, "Failed to transfer input B");
+    // status = clEnqueueWriteBuffer(queue[i], input_b_buf[i], CL_FALSE,
+    //     0, INPUT_SIZE_B*DEGREE * sizeof(uint8_t), input_b[i], 0, NULL, &write_event[1]);
+    // checkError(status, "Failed to transfer input B");
 
     status = clEnqueueWriteBuffer(queue[i], input_DE_buf[i], CL_FALSE,
-        0, N_BATCH*sizeof(uint8_t), input_deg[i], 0, NULL, &write_event[2]);
+        0, N_BATCH*sizeof(uint8_t), input_deg[i], 0, NULL, &write_event[1]);
     checkError(status, "Failed to transfer input DE");
 
     // Set kernel arguments.
@@ -245,8 +297,8 @@ void run() {
     status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &input_a_buf[i]);
     checkError(status, "Failed to set argument %d", argi - 1);
 
-    status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &input_b_buf[i]);
-    checkError(status, "Failed to set argument %d", argi - 1);
+    // status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &input_b_buf[i]);
+    // checkError(status, "Failed to set argument %d", argi - 1);
 
     status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &output_buf[i]);
     checkError(status, "Failed to set argument %d", argi - 1);
@@ -257,7 +309,7 @@ void run() {
     // Enqueue kernel.
    
     const size_t global[3] = { PKT_SIZE, BATCH_SIZE, N_BATCH };
-    const size_t local[3] = { TS, TS, N_BATCH };
+    const size_t local[3] = { TS, TS, TS3 };
     // printf("Launching for device %d (%zd elements)\n", i, global_work_size);
 
 
