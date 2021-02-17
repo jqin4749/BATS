@@ -21,8 +21,9 @@ scoped_array<cl_mem> input_a_buf; // num_devices elements
 scoped_array<cl_mem> input_b_buf; // num_devices elements
 scoped_array<cl_mem> input_DE_buf; // num_devices elements
 scoped_array<cl_mem> output_buf; // num_devices elements
+scoped_array<cl_mem> input_sample_buf; // num_devices elements
 
-scoped_array<scoped_aligned_ptr<uint8_t> > input_a, input_b, input_deg; // num_devices elements
+scoped_array<scoped_aligned_ptr<uint8_t> > input_a, input_b, input_deg, input_sample_idx; // num_devices elements
 scoped_array<scoped_aligned_ptr<uint8_t> > output; // num_devices elements
 
 scoped_array<scoped_array<uint8_t> > ref_output; // num_devices elements
@@ -101,13 +102,15 @@ bool init_opencl()
   input_b_buf.reset(num_devices);
   input_DE_buf.reset(num_devices);
   output_buf.reset(num_devices);
+  input_sample_buf.reset(num_devices);
+
 
   input_a.reset(num_devices);
   input_b.reset(num_devices);
   input_deg.reset(num_devices);
   output.reset(num_devices);
   ref_output.reset(num_devices);
-
+  input_sample_idx.reset(num_devices);
   for(unsigned i = 0; i < num_devices; ++i) {
     // Command queue.
     queue[i] = clCreateCommandQueue(context, device[i], CL_QUEUE_PROFILING_ENABLE, &status);
@@ -128,28 +131,45 @@ bool init_opencl()
     }
     // Input buffers.
     input_a_buf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY,
-    INPUT_SIZE_A *DEGREE* sizeof(uint8_t), NULL, &status);
+    FILE_SIZE * sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for input A");
-
+  
     input_b_buf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY,
-    INPUT_SIZE_B*DEGREE* sizeof(uint8_t), NULL, &status);
+    BATCH_SIZE*MAX_DEGREE*MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for input B");
-
+  
     input_DE_buf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY,
-    N_BATCH*sizeof(uint8_t), NULL, &status);
+    MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for input DE");
+   
+
+    input_sample_buf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY,
+    MAX_DEGREE*MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
+    checkError(status, "Failed to create buffer for input sample idx");
     // Output buffer.
+    printf("4\n");
+
     output_buf[i] = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
-    OUTPUT_SIZE * sizeof(uint8_t), NULL, &status);
+    PKT_SIZE*BATCH_SIZE* MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for output");
     
+    // Set kernel arguments.
+
+    status = clSetKernelArg(kernel[i], 0, sizeof(cl_mem), &input_a_buf[i]);
+    checkError(status, "Failed to set argument %d", 0);
+
+    status = clSetKernelArg(kernel[i], 1, sizeof(cl_mem), &input_b_buf[i]);
+    checkError(status, "Failed to set argument %d", 1);
+
+    status = clSetKernelArg(kernel[i], 2, sizeof(cl_mem), &output_buf[i]);
+    checkError(status, "Failed to set argument %d", 2);
+
+    status = clSetKernelArg(kernel[i], 3, sizeof(cl_mem), &input_DE_buf[i]);
+    checkError(status, "Failed to set argument %d", 3);
+
+    status = clSetKernelArg(kernel[i], 4, sizeof(cl_mem), &input_sample_buf[i]);
+    checkError(status, "Failed to set argument %d", 3);
     
-    
-    input_a[i].reset(INPUT_SIZE_A*DEGREE);
-    input_b[i].reset(INPUT_SIZE_B*DEGREE);
-    input_deg[i].reset(N_BATCH);
-    output[i].reset(OUTPUT_SIZE);
-    ref_output[i].reset(OUTPUT_SIZE);
 
     }
   printf("Finished Initialization\n");
@@ -162,79 +182,39 @@ void init_problem() {
     checkError(-1, "No devices");
   }
   
-  
+  printf("starting init problem\n");
   // Generate input vectors A and B and the reference output consisting
   // of a total of N elements.
   // We create separate arrays for each device so that each device has an
   // aligned buffer.
-#ifndef CHANGING_D
+
   for(unsigned i = 0; i < num_devices; ++i) {
-    for (int b=0;b<N_BATCH;b++){
-      input_deg[i][b] = deg_list[b];
-    }
 
-    int count=0;
-    for(int b=0;b<N_BATCH;b++){
-      for(int j=0;j<DEGREE;j++){
-        for(int jj=0;jj<PKT_SIZE;jj++){
-          input_a[i][count] = B[jj][j];
-          count++;
-        }
-      }
-    }
-    
-    count = 0;
-    for(int b=0;b<N_BATCH;b++){
-      for(int j=0;j<BATCH_SIZE;j++){
-        for(int jj=0;jj<DEGREE;jj++){
-          input_b[i][count] = G[jj][j];
-          count++;
-        }
-      }
-    }
-    
-    for(int b=0;b<N_BATCH;b++){
-      for (int m=0; m<PKT_SIZE; m++) {
-          for (int n=0; n<BATCH_SIZE; n++) {
-              uint8_t acc = 0;
-              for (int k=0; k<DEGREE; k++) {
-                  acc ^= gf_mu_x86(input_a[i][k*PKT_SIZE + m],input_b[i][n*DEGREE + k]);
-              }
-              ref_output[i][n*PKT_SIZE + m + b*PKT_SIZE*BATCH_SIZE] = acc;
-              // printf("%d,",acc);
-          }
-      }
+  // input_a[i].reset(FILE_SIZE);
+  // input_b[i].reset(BATCH_SIZE*MAX_DEGREE*MAX_NUM_BATCH);
+  // input_deg[i].reset(N_BATCH);
+  // input_sample_idx[i].reset(MAX_NUM_BATCH*MAX_DEGREE);
 
-    }
-  }
-#else
-  for(unsigned i = 0; i < num_devices; ++i) {
-    for (int b=0;b<N_BATCH;b++){
-      input_deg[i][b] = deg_list[b];
-    }
+  output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
+  ref_output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
 
-    int count=0;
-    for(int b=0;b<N_BATCH;b++){
-      int d = deg_list[b];
-      for(int j=0;j<d;j++){
-        for(int jj=0;jj<PKT_SIZE;jj++){
-          input_a[i][count] = B[jj][j];
-          count++;
-        }
-      }
-    }
+    // for (int b=0;b<N_BATCH;b++){
+    //   input_deg[i][b] = deg_list[b];
+    // }
+
+    // for(int j=0;j<FILE_SIZE;j++){
+    //   input_a[i][j] = input_file[j];
+    // }
     
-    count = 0;
-    for(int b=0;b<N_BATCH;b++){
-      int d = deg_list[b];
-      for(int j=0;j<BATCH_SIZE;j++){
-        for(int jj=0;jj<d;jj++){
-          input_b[i][count] = G[jj][j];
-          count++;
-        }
-      }
-    }
-    
+    // for(int j=0;j<N_BATCH*MAX_DEGREE;j++){
+    //   input_sample_idx[i][j] = sample_idx[j];
+    // }
+
+    // for(int j=0;j<BATCH_SIZE*MAX_DEGREE*N_BATCH;j++){
+    //   input_b[i][j] = B[j];
+    // }
+    printf("computing golden ref\n");
+    // computing golden reference
     // got the offsets
     int offset_list[N_BATCH]={0};
     for(int j=0;j<N_BATCH;j++){
@@ -242,28 +222,46 @@ void init_problem() {
         offset_list[j] += deg_list[jj];
       }
     }
-
+    
+    
+    // construct naive matrix A (PKT_SIZE,DEGREE,N_BATCH)s
+    int golden_A[MAX_DEGREE*MAX_NUM_BATCH*PKT_SIZE]; // MAX_DEGREE is too large
+  
+    int count = 0;
+    for(int idx=0;idx<N_BATCH;idx++){
+      int cur_deg =deg_list[idx];
+      int cur_offset = offset_list[idx];
+      for(int dd=0;dd<cur_deg;dd++){
+        int cur_sample_idx = sample_idx[cur_offset+dd];
+        for(int pk=0;pk<PKT_SIZE;pk++){
+          golden_A[count] = input_file[pk+cur_sample_idx*PKT_SIZE];
+          count++;
+        }
+      }
+    }
+   
+    // compute golden A * matrix B
     for(int b=0;b<N_BATCH;b++){
       int d = deg_list[b];
       for (int m=0; m<PKT_SIZE; m++) {
           for (int n=0; n<BATCH_SIZE; n++) {
               uint8_t acc = 0;
               for (int k=0; k<d; k++) {
-                  acc ^= gf_mu_x86(input_a[i][k*PKT_SIZE + m + PKT_SIZE*offset_list[b]],input_b[i][n*d + k + BATCH_SIZE*offset_list[b]]);
+                  acc ^= gf_mu_x86(golden_A[k*PKT_SIZE + m + PKT_SIZE*offset_list[b]],B[n*d + k + BATCH_SIZE*offset_list[b]]);
               }
               ref_output[i][n*PKT_SIZE + m + b*PKT_SIZE*BATCH_SIZE] = acc;
               // printf("%d,",acc);
           }
       }
     }
-    
   }
-#endif
+  printf("finished init problem\n");
 }
 
 
 
 void run() {
+  printf("running\n");
   cl_int status;
  
   const double start_time = getCurrentTimestamp();
@@ -271,7 +269,7 @@ void run() {
   // Launch the problem for each device.
   scoped_array<cl_event> kernel_event(num_devices);
   scoped_array<cl_event> finish_event(num_devices);
-  cl_event write_event[2];
+  cl_event write_event[4];
   for(unsigned i = 0; i < num_devices; ++i) {
 
 
@@ -280,49 +278,36 @@ void run() {
     // for the host-to-device transfer.
     
     status = clEnqueueWriteBuffer(queue[i], input_a_buf[i], CL_FALSE,
-        0, INPUT_SIZE_A*DEGREE * sizeof(uint8_t), input_a[i], 0, NULL, &write_event[0]);
+        0, FILE_SIZE * sizeof(uint8_t), input_file, 0, NULL, &write_event[0]);
     checkError(status, "Failed to transfer input A");
 
-    // status = clEnqueueWriteBuffer(queue[i], input_b_buf[i], CL_FALSE,
-    //     0, INPUT_SIZE_B*DEGREE * sizeof(uint8_t), input_b[i], 0, NULL, &write_event[1]);
-    // checkError(status, "Failed to transfer input B");
+    status = clEnqueueWriteBuffer(queue[i], input_b_buf[i], CL_FALSE,
+        0, sizeof(B) * sizeof(uint8_t), B, 0, NULL, &write_event[1]);
+    checkError(status, "Failed to transfer input B");
 
     status = clEnqueueWriteBuffer(queue[i], input_DE_buf[i], CL_FALSE,
-        0, N_BATCH*sizeof(uint8_t), input_deg[i], 0, NULL, &write_event[1]);
+        0, sizeof(deg_list)*sizeof(uint8_t), deg_list, 0, NULL, &write_event[2]);
     checkError(status, "Failed to transfer input DE");
 
-    // Set kernel arguments.
-    unsigned argi = 0;
-
-    status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &input_a_buf[i]);
-    checkError(status, "Failed to set argument %d", argi - 1);
-
-    // status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &input_b_buf[i]);
-    // checkError(status, "Failed to set argument %d", argi - 1);
-
-    status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &output_buf[i]);
-    checkError(status, "Failed to set argument %d", argi - 1);
-
-    status = clSetKernelArg(kernel[i], argi++, sizeof(cl_mem), &input_DE_buf[i]);
-    checkError(status, "Failed to set argument %d", argi - 1);
+    status = clEnqueueWriteBuffer(queue[i], input_sample_buf[i], CL_FALSE,
+        0, sizeof(sample_idx)*sizeof(uint8_t), sample_idx, 0, NULL, &write_event[3]);
+    checkError(status, "Failed to transfer sampled idx");
 
     // Enqueue kernel.
    
     const size_t global[3] = { PKT_SIZE, BATCH_SIZE, N_BATCH };
-    const size_t local[3] = { TS, TS, TS3 };
+    const size_t local[3] = { TS, TS, N_BATCH };
     // printf("Launching for device %d (%zd elements)\n", i, global_work_size);
 
-
     status = clEnqueueNDRangeKernel(queue[i], kernel[i], 3, NULL,
-        global, local, 2, write_event, &kernel_event[i]);
-
+        global, local, 4, write_event, &kernel_event[i]);
     checkError(status, "Failed to launch kernel");
 
     // Read the result. This the final operation.
     status = clEnqueueReadBuffer(queue[i], output_buf[i], CL_FALSE,
-        0, OUTPUT_SIZE * sizeof(uint8_t), output[i], 1, &kernel_event[i], &finish_event[i]);
+        0, PKT_SIZE*BATCH_SIZE*N_BATCH*sizeof(uint8_t), output[i], 1, &kernel_event[i], &finish_event[i]);
 
-    // Release local events.
+    
   
   }
 
@@ -343,12 +328,18 @@ void run() {
     printf("Write 1: %0.3f ms\n", i, double(time_ns) * 1e-6);
     time_ns = getStartEndTime(write_event[1]);
     printf("Write 2: %0.3f ms\n", i, double(time_ns) * 1e-6);
+    time_ns = getStartEndTime(write_event[2]);
+    printf("Write 3: %0.3f ms\n", i, double(time_ns) * 1e-6);
+    time_ns = getStartEndTime(write_event[3]);
+    printf("Write 4: %0.3f ms\n", i, double(time_ns) * 1e-6);
     time_ns = getStartEndTime(finish_event[i]);
     printf("Read: %0.3f ms\n", i, double(time_ns) * 1e-6);
   }
 
   clReleaseEvent(write_event[0]);
   clReleaseEvent(write_event[1]);
+  clReleaseEvent(write_event[2]);
+  clReleaseEvent(write_event[3]);
   // Release all events.
   for(unsigned i = 0; i < num_devices; ++i) {
     clReleaseEvent(kernel_event[i]);
@@ -357,20 +348,17 @@ void run() {
 
   // Verify results.
   bool pass = true;
-  int count=0;
   for(unsigned i = 0; i < num_devices && pass; ++i) {
-    for(int b=0;b<N_BATCH;b++){
-      for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE && pass; ++j) {
+    
+      for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH && pass; ++j) {
         // printf("%d,%d\n",output[i][j],ref_output[i][j]);
-        if(output[i][count] != ref_output[i][count]) {
+        if(output[i][j] != ref_output[i][j]) {
           printf("Failed verification @ device %d, index %d\nOutput: %d\nReference: %d\n",
               i, j, output[i][j], ref_output[i][j]);
           pass = false;
         }
-        count++;
+       
       }
-    }
-    
   }
 
   printf("\nVerification: %s\n", pass ? "PASS" : "FAIL");
@@ -424,7 +412,7 @@ int main(int argc, char **argv) {
   init_problem();
 
   // Run the kernel.
-  for(int i=0;i<10;i++){
+  for(int i=0;i<5;i++){
     run();
   }
   
