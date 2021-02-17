@@ -350,7 +350,7 @@ void run() {
   bool pass = true;
   for(unsigned i = 0; i < num_devices && pass; ++i) {
     
-      for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH && pass; ++j) {
+      for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH ; ++j) {
         // printf("%d,%d\n",output[i][j],ref_output[i][j]);
         if(output[i][j] != ref_output[i][j]) {
           printf("Failed verification @ device %d, index %d\nOutput: %d\nReference: %d\n",

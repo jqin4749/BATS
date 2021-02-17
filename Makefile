@@ -52,7 +52,7 @@ endif
 
 # Compiler
 CXX := arm-linux-gnueabihf-g++
-
+# CXX := g++
 # Target
 TARGET := host
 TARGET_DIR := ../bin
@@ -75,7 +75,7 @@ $(TARGET_DIR)/$(TARGET) : Makefile $(SRCS) $(INCS) $(TARGET_DIR)
 			$(AOCL_COMPILE_CONFIG) $(SRCS) $(AOCL_LINK_CONFIG) \
 			$(foreach D,$(LIB_DIRS),-L$D) \
 			$(foreach L,$(LIBS),-l$L) \
-			-o $(TARGET_DIR)/$(TARGET)
+			-o $(TARGET_DIR)/$(TARGET) 
 
 $(TARGET_DIR) :
 	$(ECHO)mkdir $(TARGET_DIR)

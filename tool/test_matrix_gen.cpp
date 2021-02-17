@@ -7,10 +7,11 @@
 #include <iostream>
 #include <fstream>
 #include "tools.h"
+#define TEST_ONLY
 // #include "test_matrix.h"
 // B (PKT_SIZE,DEGREE)
 // G (DEGREE,BATCH_SIZE)
-#include "test_matrix.h"
+
 using namespace std;
 
 bool check_exit(uint8_t sample_idx[N_BATCH*MAX_DEGREE],int count, int offset, uint8_t num){
@@ -50,53 +51,7 @@ int get_sampleIdx_size(uint8_t deg_list[N_BATCH_],int n_batch){
 }
 
 
-
-// int main(){
-  
-//     int offset_list[N_BATCH]={0};
-//     for(int j=0;j<N_BATCH;j++){
-//       for(int jj=0;jj<j;jj++){
-//         offset_list[j] += deg_list[jj];
-//       }
-//     }
-//     // printf("here\n");
-//     uint8_t ref_output[PKT_SIZE*BATCH_SIZE*N_BATCH];
-//     int golden_A[64*N_BATCH*PKT_SIZE];
-//     int count = 0;
-//     for(int idx=0;idx<N_BATCH;idx++){
-//       int cur_deg =deg_list[idx];
-//       int cur_offset = offset_list[idx];
-//       for(int dd=0;dd<cur_deg;dd++){
-//         int cur_sample_idx = sample_idx[cur_offset+dd];
-//         for(int pk=0;pk<PKT_SIZE;pk++){
-//           golden_A[count] = input_file[pk+cur_sample_idx*PKT_SIZE];
-//           count++;
-//         }
-//       }
-//     }
-//     // compute golden A * matrix B
-//     for(int b=0;b<N_BATCH;b++){
-//       int d = deg_list[b];
-//       for (int m=0; m<PKT_SIZE; m++) {
-//           for (int n=0; n<BATCH_SIZE; n++) {
-//               uint8_t acc = 0;
-//               for (int k=0; k<d; k++) {
-//                   acc ^= gf_mu_x86(golden_A[k*PKT_SIZE + m + PKT_SIZE*offset_list[b]],B[n*d + k + BATCH_SIZE*offset_list[b]]);
-//               }
-//               ref_output[n*PKT_SIZE + m + b*PKT_SIZE*BATCH_SIZE] = acc;
-//               // printf("%d,",acc);
-//           }
-//       }
-//     }
-//     for(int i=0;i<PKT_SIZE*BATCH_SIZE*N_BATCH;i++){
-//         printf("%d,",ref_output[i]);
-//         if(i % 50 ==0&&i!=0){
-//             printf("\n");
-//         }
-//     }
-//   return 0;
-// }
-
+#ifndef TEST_ONLY
 int main(){
     char buf[1000] = {0};
     int n = 0;
@@ -235,3 +190,55 @@ int main(){
 
 }
 
+#else
+#include "test_matrix.h"
+int main(){
+  
+    int offset_list[N_BATCH]={0};
+    for(int j=0;j<N_BATCH;j++){
+      for(int jj=0;jj<j;jj++){
+        offset_list[j] += deg_list[jj];
+      }
+    }
+    // printf("here\n");
+    uint8_t ref_output[PKT_SIZE*BATCH_SIZE*N_BATCH];
+    int golden_A[MAX_DEGREE*N_BATCH*PKT_SIZE];
+    int count = 0;
+    for(int idx=0;idx<N_BATCH;idx++){
+      int cur_deg =deg_list[idx];
+      int cur_offset = offset_list[idx];
+      for(int dd=0;dd<cur_deg;dd++){
+        int cur_sample_idx = sample_idx[cur_offset+dd];
+        for(int pk=0;pk<PKT_SIZE;pk++){
+          golden_A[count] = input_file[pk+cur_sample_idx*PKT_SIZE];
+          count++;
+        }
+      }
+    }
+ 
+    // compute golden A * matrix B
+    for(int b=0;b<N_BATCH;b++){
+      int d = deg_list[b];
+      for (int m=0; m<PKT_SIZE; m++) {
+          for (int n=0; n<BATCH_SIZE; n++) {
+              uint8_t acc = 0;
+              for (int k=0; k<d; k++) {
+                  acc ^= gf_mu_x86(golden_A[k*PKT_SIZE + m + PKT_SIZE*offset_list[b]],B[n*d + k + BATCH_SIZE*offset_list[b]]);
+              }
+              ref_output[n*PKT_SIZE + m + b*PKT_SIZE*BATCH_SIZE] = acc;
+              // printf("%d,",acc);
+          }
+      }
+    }
+
+    for(int i=0;i<PKT_SIZE*BATCH_SIZE*N_BATCH;i++){
+        
+        if(i <20){
+            printf("%d,",ref_output[i]);
+        }
+    }
+
+    
+  return 0;
+}
+#endif

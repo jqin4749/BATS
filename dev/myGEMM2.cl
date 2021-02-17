@@ -34,12 +34,12 @@ __kernel
 // __attribute__((num_simd_work_items(SIMD_TS)))
 __attribute__((num_compute_units(CMP_UNIT)))
 __attribute__((max_work_group_size(TS*TS*MAX_NUM_BATCH))) 
-// __attribute__((reqd_work_group_size(TS,TS,MAX_NUM_BATCH))) 
+// __attribute__((reqd_work_group_size(TS,TS,NUM_BATCH))) 
 void myGEMM2(
             __global const uint8_t* restrict  A, // file to be encoded cached
             __global const uint8_t* restrict  B, // Generator matrix cached
             __global uint8_t* restrict C,
-            __global volatile uint8_t* restrict DEGREE_,
+            __global const uint8_t* restrict DEGREE_,
             __global const uint8_t* restrict sample_idx // cached
             ) {
     
