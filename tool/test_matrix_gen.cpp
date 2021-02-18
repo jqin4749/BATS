@@ -192,6 +192,14 @@ int main(){
 
 #else
 #include "test_matrix.h"
+
+int address_interpretor(int x, int y, int offset,  const uint8_t* sample_idx){
+    // use x to find index of required packet (file space) in sample_idx    
+    uint8_t file_pkt_idx = sample_idx[offset+x];
+    // calculate idx of required data in file space
+    return file_pkt_idx*PKT_SIZE + y;
+}
+
 int main(){
   
     int offset_list[N_BATCH]={0};
@@ -200,6 +208,8 @@ int main(){
         offset_list[j] += deg_list[jj];
       }
     }
+
+    // method 1
     // printf("here\n");
     uint8_t ref_output[PKT_SIZE*BATCH_SIZE*N_BATCH];
     int golden_A[MAX_DEGREE*N_BATCH*PKT_SIZE];
@@ -231,14 +241,34 @@ int main(){
       }
     }
 
-    for(int i=0;i<PKT_SIZE*BATCH_SIZE*N_BATCH;i++){
-        
-        if(i <20){
-            printf("%d,",ref_output[i]);
-        }
+    // method 2 addr interpretor
+    uint8_t ref_output_2[PKT_SIZE*BATCH_SIZE*N_BATCH];
+    for(int b=0;b<N_BATCH;b++){
+      int d = deg_list[b];
+      for (int m=0; m<PKT_SIZE; m++) {
+          for (int n=0; n<BATCH_SIZE; n++) {
+              uint8_t acc = 0;
+              for (int k=0; k<d; k++) {
+                 const int A_vec = address_interpretor(k,m,offset_list[b],sample_idx);
+                //   printf("%d\n",A_vec);
+                  acc ^= gf_mu_x86(input_file[A_vec],B[n*d + k + BATCH_SIZE*offset_list[b]]);
+              }
+              ref_output_2[n*PKT_SIZE + m + b*PKT_SIZE*BATCH_SIZE] = acc;
+              // printf("%d,",acc);
+          }
+      }
     }
 
+    for(int i=0;i<PKT_SIZE*BATCH_SIZE*N_BATCH;i++){
+        if(ref_output[i] != ref_output_2[i]){
+            printf("Don't match at %d:%d %d",i,ref_output[i],ref_output_2[i]);
+            break;
+        }
+    }
     
+    for(int i=0;i<10;i++){
+        printf("%d\n",ref_output_2[i]);
+    }
   return 0;
 }
 #endif

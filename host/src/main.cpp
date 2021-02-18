@@ -22,8 +22,9 @@ scoped_array<cl_mem> input_b_buf; // num_devices elements
 scoped_array<cl_mem> input_DE_buf; // num_devices elements
 scoped_array<cl_mem> output_buf; // num_devices elements
 scoped_array<cl_mem> input_sample_buf; // num_devices elements
+scoped_array<cl_mem> test_buf; // num_devices elements
 
-scoped_array<scoped_aligned_ptr<uint8_t> > input_a, input_b, input_deg, input_sample_idx; // num_devices elements
+scoped_array<scoped_aligned_ptr<uint8_t> > input_a, input_b, input_deg, input_sample_idx, test_out; // num_devices elements
 scoped_array<scoped_aligned_ptr<uint8_t> > output; // num_devices elements
 
 scoped_array<scoped_array<uint8_t> > ref_output; // num_devices elements
@@ -103,7 +104,7 @@ bool init_opencl()
   input_DE_buf.reset(num_devices);
   output_buf.reset(num_devices);
   input_sample_buf.reset(num_devices);
-
+  test_buf.reset(num_devices);
 
   input_a.reset(num_devices);
   input_b.reset(num_devices);
@@ -111,6 +112,7 @@ bool init_opencl()
   output.reset(num_devices);
   ref_output.reset(num_devices);
   input_sample_idx.reset(num_devices);
+  test_out.reset(num_devices);
   for(unsigned i = 0; i < num_devices; ++i) {
     // Command queue.
     queue[i] = clCreateCommandQueue(context, device[i], CL_QUEUE_PROFILING_ENABLE, &status);
@@ -153,6 +155,9 @@ bool init_opencl()
     PKT_SIZE*BATCH_SIZE* MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for output");
     
+    test_buf[i] = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
+    PKT_SIZE*BATCH_SIZE* MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
+    checkError(status, "Failed to create buffer for output");
     // Set kernel arguments.
 
     status = clSetKernelArg(kernel[i], 0, sizeof(cl_mem), &input_a_buf[i]);
@@ -169,7 +174,8 @@ bool init_opencl()
 
     status = clSetKernelArg(kernel[i], 4, sizeof(cl_mem), &input_sample_buf[i]);
     checkError(status, "Failed to set argument %d", 3);
-    
+    // status = clSetKernelArg(kernel[i], 5, sizeof(cl_mem), &test_buf[i]);
+    // checkError(status, "Failed to set argument %d", 3);
 
     }
   printf("Finished Initialization\n");
@@ -197,7 +203,7 @@ void init_problem() {
 
   output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
   ref_output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
-
+  test_out[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
     // for (int b=0;b<N_BATCH;b++){
     //   input_deg[i][b] = deg_list[b];
     // }
@@ -269,6 +275,8 @@ void run() {
   // Launch the problem for each device.
   scoped_array<cl_event> kernel_event(num_devices);
   scoped_array<cl_event> finish_event(num_devices);
+  scoped_array<cl_event> finish_event2(num_devices);
+
   cl_event write_event[4];
   for(unsigned i = 0; i < num_devices; ++i) {
 
@@ -289,9 +297,9 @@ void run() {
         0, sizeof(deg_list)*sizeof(uint8_t), deg_list, 0, NULL, &write_event[2]);
     checkError(status, "Failed to transfer input DE");
 
-    status = clEnqueueWriteBuffer(queue[i], input_sample_buf[i], CL_FALSE,
-        0, sizeof(sample_idx)*sizeof(uint8_t), sample_idx, 0, NULL, &write_event[3]);
-    checkError(status, "Failed to transfer sampled idx");
+    // status = clEnqueueWriteBuffer(queue[i], input_sample_buf[i], CL_FALSE,
+    //     0, sizeof(sample_idx)*sizeof(uint8_t), sample_idx, 0, NULL, &write_event[3]);
+    // checkError(status, "Failed to transfer sampled idx");
 
     // Enqueue kernel.
    
@@ -306,8 +314,11 @@ void run() {
     // Read the result. This the final operation.
     status = clEnqueueReadBuffer(queue[i], output_buf[i], CL_FALSE,
         0, PKT_SIZE*BATCH_SIZE*N_BATCH*sizeof(uint8_t), output[i], 1, &kernel_event[i], &finish_event[i]);
+    checkError(status, "Failed to read");
 
-    
+    // status = clEnqueueReadBuffer(queue[i], test_buf[i], CL_FALSE,
+    //     0, PKT_SIZE*BATCH_SIZE*N_BATCH*sizeof(uint8_t), test_out[i], 1, &kernel_event[i], &finish_event2[i]);
+    // checkError(status, "Failed to launch read test");
   
   }
 
@@ -350,7 +361,7 @@ void run() {
   bool pass = true;
   for(unsigned i = 0; i < num_devices && pass; ++i) {
     
-      for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH ; ++j) {
+      for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH && pass; ++j) {
         // printf("%d,%d\n",output[i][j],ref_output[i][j]);
         if(output[i][j] != ref_output[i][j]) {
           printf("Failed verification @ device %d, index %d\nOutput: %d\nReference: %d\n",
@@ -361,6 +372,9 @@ void run() {
       }
   }
 
+  // for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH; ++j){
+  //     printf("%d\n",test_out[0][j]);
+  // }
   printf("\nVerification: %s\n", pass ? "PASS" : "FAIL");
 }
 

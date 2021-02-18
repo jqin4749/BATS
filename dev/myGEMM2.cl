@@ -39,7 +39,7 @@ void myGEMM2(
             __global const uint8_t* restrict  A, // file to be encoded cached
             __global const uint8_t* restrict  B, // Generator matrix cached
             __global uint8_t* restrict C,
-            __global const uint8_t* restrict DEGREE_,
+            __global volatile uint8_t* restrict DEGREE_,
             __global const uint8_t* restrict sample_idx // cached
             ) {
     
@@ -49,41 +49,46 @@ void myGEMM2(
     const int globalRow = TS*get_group_id(0) + row; // Row ID of C (0..M)
     const int globalCol = TS*get_group_id(1) + col; // Col ID of C (0..N)
     const int batch_id = get_global_id(2); // max: N_BATCH
+    // const int num_batch = get_local_size(2);
     // Local memory to fit a tile of TS*TS elements of A and B
     __local uint8_t Asub[TS][TS];
     __local uint8_t Bsub[TS][TS];
     __local uint8_t degrees[MAX_NUM_BATCH];
+    int deg_offset = 0;
+    uint8_t acc = 0;
 
+    // for(int i=0;i<num_batch;i++){
+    //     degrees[i] = DEGREE_[i];
+    // }
     // load degrees and calculate offsets
+  
     degrees[batch_id] = DEGREE_[batch_id];
     barrier(CLK_LOCAL_MEM_FENCE);
-    int deg_offset;
+    
     uint8_t my_deg = degrees[batch_id];
     
     #pragma ii 1
     for(int i=0;i<batch_id;i++){
         deg_offset += degrees[i];
     }
-    // Initialise the accumulation register
-    uint8_t acc = 0;
-    
+    barrier(CLK_LOCAL_MEM_FENCE);
     // Loop over all tiles
     int numTiles = my_deg/TS;
-    barrier(CLK_LOCAL_MEM_FENCE);
     #pragma ii 1
     for (int t=0; t<numTiles; t++) {
  
         // Load one tile of A and B into local memory
-        const int tiledRow = TS*t + row; // tile space
-        const int tiledCol = TS*t + col; // tile space
-        const int A_x = tiledCol; // A space
-        const int A_y = globalRow;// A space
+        int tiledRow = TS*t + row; // tile space
+        int tiledCol = TS*t + col; // tile space
+        int A_x = tiledCol; // A space
+        int A_y = globalRow;// A space
         const int A_vec = address_interpretor(A_x,A_y,deg_offset,sample_idx); // get vectorized position idx in file
+        
         Asub[row][col] = A[A_vec]; // swap row and col for Asub and Bsub
+        // Asub[row][col] = A[tiledCol*PKT_SIZE + globalRow + PKT_SIZE*deg_offset]; // swap row and col for Asub and Bsub
         Bsub[col][row] = B[globalCol*my_deg + tiledRow + deg_offset*BATCH_SIZE];
         // Bsub[col][row] = 1;
 
- 
         // Synchronise to make sure the tile is loaded
         barrier(CLK_LOCAL_MEM_FENCE);
  
@@ -99,4 +104,5 @@ void myGEMM2(
  
     // Store the final result in C
     C[globalCol*PKT_SIZE + globalRow + batch_id*PKT_SIZE*BATCH_SIZE] = acc;
+
 }
