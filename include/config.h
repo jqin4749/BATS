@@ -2,7 +2,7 @@
 #define PKT_SIZE 1024 // pkt size M
 #define PKT_NUM 64
 #define BATCH_SIZE 4 // batch size N
-#define MAX_DEGREE 64 // K   MAX
+#define MAX_DEGREE 16 // K   MAX
 #define N_BATCH 20
 #define MAX_NUM_BATCH 30 // used only at buffer creation
 #define FILE_SIZE PKT_SIZE*PKT_NUM

@@ -83,11 +83,10 @@ void myGEMM2(
         int A_x = tiledCol; // A space
         int A_y = globalRow;// A space
         const int A_vec = address_interpretor(A_x,A_y,deg_offset,sample_idx); // get vectorized position idx in file
-        
         Asub[row][col] = A[A_vec]; // swap row and col for Asub and Bsub
         // Asub[row][col] = A[tiledCol*PKT_SIZE + globalRow + PKT_SIZE*deg_offset]; // swap row and col for Asub and Bsub
         Bsub[col][row] = B[globalCol*my_deg + tiledRow + deg_offset*BATCH_SIZE];
-        // Bsub[col][row] = 1;
+   
 
         // Synchronise to make sure the tile is loaded
         barrier(CLK_LOCAL_MEM_FENCE);

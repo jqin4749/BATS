@@ -196,29 +196,30 @@ void init_problem() {
 
   for(unsigned i = 0; i < num_devices; ++i) {
 
-  // input_a[i].reset(FILE_SIZE);
-  // input_b[i].reset(BATCH_SIZE*MAX_DEGREE*MAX_NUM_BATCH);
-  // input_deg[i].reset(N_BATCH);
-  // input_sample_idx[i].reset(MAX_NUM_BATCH*MAX_DEGREE);
+  input_a[i].reset(FILE_SIZE);
+  input_b[i].reset(BATCH_SIZE*MAX_DEGREE*MAX_NUM_BATCH);
+  input_deg[i].reset(N_BATCH);
+  input_sample_idx[i].reset(MAX_NUM_BATCH*MAX_DEGREE);
 
   output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
   ref_output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
   test_out[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
-    // for (int b=0;b<N_BATCH;b++){
-    //   input_deg[i][b] = deg_list[b];
-    // }
+    for (int b=0;b<N_BATCH;b++){
+      input_deg[i][b] = deg_list[b];
+    }
 
-    // for(int j=0;j<FILE_SIZE;j++){
-    //   input_a[i][j] = input_file[j];
-    // }
+    for(int j=0;j<FILE_SIZE;j++){
+      input_a[i][j] = input_file[j];
+    }
     
-    // for(int j=0;j<N_BATCH*MAX_DEGREE;j++){
-    //   input_sample_idx[i][j] = sample_idx[j];
-    // }
+    for(int j=0;j<N_BATCH*MAX_DEGREE;j++){
+      input_sample_idx[i][j] = sample_idx[j];
+    }
 
-    // for(int j=0;j<BATCH_SIZE*MAX_DEGREE*N_BATCH;j++){
-    //   input_b[i][j] = B[j];
-    // }
+    for(int j=0;j<BATCH_SIZE*MAX_DEGREE*N_BATCH;j++){
+      input_b[i][j] = B[j];
+    }
+
     printf("computing golden ref\n");
     // computing golden reference
     // got the offsets
@@ -286,15 +287,15 @@ void run() {
     // for the host-to-device transfer.
     
     status = clEnqueueWriteBuffer(queue[i], input_a_buf[i], CL_FALSE,
-        0, FILE_SIZE * sizeof(uint8_t), input_file, 0, NULL, &write_event[0]);
+        0, FILE_SIZE * sizeof(uint8_t), &input_a[i], 0, NULL, &write_event[0]);
     checkError(status, "Failed to transfer input A");
 
     status = clEnqueueWriteBuffer(queue[i], input_b_buf[i], CL_FALSE,
-        0, sizeof(B) * sizeof(uint8_t), B, 0, NULL, &write_event[1]);
+        0, sizeof(B) * sizeof(uint8_t), &input_b[i], 0, NULL, &write_event[1]);
     checkError(status, "Failed to transfer input B");
 
     status = clEnqueueWriteBuffer(queue[i], input_DE_buf[i], CL_FALSE,
-        0, sizeof(deg_list)*sizeof(uint8_t), deg_list, 0, NULL, &write_event[2]);
+        0, sizeof(deg_list)*sizeof(uint8_t), &input_deg[i], 0, NULL, &write_event[2]);
     checkError(status, "Failed to transfer input DE");
 
     // status = clEnqueueWriteBuffer(queue[i], input_sample_buf[i], CL_FALSE,
