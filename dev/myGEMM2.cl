@@ -42,7 +42,7 @@ void myGEMM2(
             __global volatile uint8_t* restrict DEGREE_,
             __global const uint8_t* restrict sample_idx // cached
             ) {
-    sssssss
+   
     // Thread identifiers
     const int row = get_local_id(0); // Local row ID (max: TS) (tile space)
     const int col = get_local_id(1); // Local col ID (max: TS)
