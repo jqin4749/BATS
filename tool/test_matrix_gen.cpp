@@ -7,7 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include "tools.h"
-#define TEST_ONLY
+// #define TEST_ONLY
 // #include "test_matrix.h"
 // B (PKT_SIZE,DEGREE)
 // G (DEGREE,BATCH_SIZE)
@@ -82,10 +82,10 @@ int main(){
     n = sprintf(buf,"\n\nstatic uint8_t deg_list[%d] = {",N_BATCH);
     myfile << buf;
     for(int j=0;j<N_BATCH;j++){
-        // int num = rand() % 64;
-        int num = 16;
+        int num = rand() % 30;
+        // int num = 16;
         while(num % TS != 0 || num ==0){
-            num = rand() % 64;
+            num = rand() % 30;
         }
         n = sprintf(buf,"%d,",num);
         myfile << buf;

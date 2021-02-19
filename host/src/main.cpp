@@ -104,15 +104,15 @@ bool init_opencl()
   input_DE_buf.reset(num_devices);
   output_buf.reset(num_devices);
   input_sample_buf.reset(num_devices);
-  test_buf.reset(num_devices);
+  // test_buf.reset(num_devices);
 
-  input_a.reset(num_devices);
-  input_b.reset(num_devices);
-  input_deg.reset(num_devices);
+  // input_a.reset(num_devices);
+  // input_b.reset(num_devices);
+  // input_deg.reset(num_devices);
   output.reset(num_devices);
   ref_output.reset(num_devices);
-  input_sample_idx.reset(num_devices);
-  test_out.reset(num_devices);
+  // input_sample_idx.reset(num_devices);
+  // test_out.reset(num_devices);
   for(unsigned i = 0; i < num_devices; ++i) {
     // Command queue.
     queue[i] = clCreateCommandQueue(context, device[i], CL_QUEUE_PROFILING_ENABLE, &status);
@@ -149,15 +149,12 @@ bool init_opencl()
     MAX_DEGREE*MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for input sample idx");
     // Output buffer.
-    printf("4\n");
 
     output_buf[i] = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
     PKT_SIZE*BATCH_SIZE* MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for output");
     
-    test_buf[i] = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
-    PKT_SIZE*BATCH_SIZE* MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
-    checkError(status, "Failed to create buffer for output");
+  
     // Set kernel arguments.
 
     status = clSetKernelArg(kernel[i], 0, sizeof(cl_mem), &input_a_buf[i]);
@@ -174,8 +171,7 @@ bool init_opencl()
 
     status = clSetKernelArg(kernel[i], 4, sizeof(cl_mem), &input_sample_buf[i]);
     checkError(status, "Failed to set argument %d", 3);
-    // status = clSetKernelArg(kernel[i], 5, sizeof(cl_mem), &test_buf[i]);
-    // checkError(status, "Failed to set argument %d", 3);
+
 
     }
   printf("Finished Initialization\n");
@@ -196,29 +192,29 @@ void init_problem() {
 
   for(unsigned i = 0; i < num_devices; ++i) {
 
-  input_a[i].reset(FILE_SIZE);
-  input_b[i].reset(BATCH_SIZE*MAX_DEGREE*MAX_NUM_BATCH);
-  input_deg[i].reset(N_BATCH);
-  input_sample_idx[i].reset(MAX_NUM_BATCH*MAX_DEGREE);
+  // input_a[i].reset(FILE_SIZE);
+  // input_b[i].reset(BATCH_SIZE*MAX_DEGREE*MAX_NUM_BATCH);
+  // input_deg[i].reset(N_BATCH);
+  // input_sample_idx[i].reset(MAX_NUM_BATCH*MAX_DEGREE);
 
   output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
   ref_output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
-  test_out[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
-    for (int b=0;b<N_BATCH;b++){
-      input_deg[i][b] = deg_list[b];
-    }
+  // test_out[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
+    // for (int b=0;b<N_BATCH;b++){
+    //   input_deg[i][b] = deg_list[b];
+    // }
 
-    for(int j=0;j<FILE_SIZE;j++){
-      input_a[i][j] = input_file[j];
-    }
+    // for(int j=0;j<FILE_SIZE;j++){
+    //   input_a[i][j] = input_file[j];
+    // }
     
-    for(int j=0;j<N_BATCH*MAX_DEGREE;j++){
-      input_sample_idx[i][j] = sample_idx[j];
-    }
+    // for(int j=0;j<N_BATCH*MAX_DEGREE;j++){
+    //   input_sample_idx[i][j] = sample_idx[j];
+    // }
 
-    for(int j=0;j<BATCH_SIZE*MAX_DEGREE*N_BATCH;j++){
-      input_b[i][j] = B[j];
-    }
+    // for(int j=0;j<BATCH_SIZE*MAX_DEGREE*N_BATCH;j++){
+    //   input_b[i][j] = B[j];
+    // }
 
     printf("computing golden ref\n");
     // computing golden reference
@@ -287,25 +283,29 @@ void run() {
     // for the host-to-device transfer.
     
     status = clEnqueueWriteBuffer(queue[i], input_a_buf[i], CL_FALSE,
-        0, FILE_SIZE * sizeof(uint8_t), &input_a[i], 0, NULL, &write_event[0]);
+        0, FILE_SIZE * sizeof(uint8_t), input_file, 0, NULL, &write_event[0]);
     checkError(status, "Failed to transfer input A");
 
     status = clEnqueueWriteBuffer(queue[i], input_b_buf[i], CL_FALSE,
-        0, sizeof(B) * sizeof(uint8_t), &input_b[i], 0, NULL, &write_event[1]);
+        0, sizeof(B) * sizeof(uint8_t), B, 0, NULL, &write_event[1]);
     checkError(status, "Failed to transfer input B");
 
     status = clEnqueueWriteBuffer(queue[i], input_DE_buf[i], CL_FALSE,
-        0, sizeof(deg_list)*sizeof(uint8_t), &input_deg[i], 0, NULL, &write_event[2]);
+        0, sizeof(deg_list)*sizeof(uint8_t), deg_list, 0, NULL, &write_event[2]);
     checkError(status, "Failed to transfer input DE");
 
-    // status = clEnqueueWriteBuffer(queue[i], input_sample_buf[i], CL_FALSE,
-    //     0, sizeof(sample_idx)*sizeof(uint8_t), sample_idx, 0, NULL, &write_event[3]);
+    status = clEnqueueWriteBuffer(queue[i], input_sample_buf[i], CL_FALSE,
+        0, sizeof(sample_idx)*sizeof(uint8_t), sample_idx, 0, NULL, &write_event[3]);
+    checkError(status, "Failed to transfer sampled idx");
+
+    // status = clEnqueueWriteBuffer(queue[i], test_buf[i], CL_FALSE,
+    //     0, sizeof(sample_idx)*sizeof(uint8_t), test_out[i], 0, NULL, &write_event[3]);
     // checkError(status, "Failed to transfer sampled idx");
 
     // Enqueue kernel.
    
     const size_t global[3] = { PKT_SIZE, BATCH_SIZE, N_BATCH };
-    const size_t local[3] = { TS, TS, N_BATCH };
+    const size_t local[3] = { TS, TS, 1 };
     // printf("Launching for device %d (%zd elements)\n", i, global_work_size);
 
     status = clEnqueueNDRangeKernel(queue[i], kernel[i], 3, NULL,
@@ -317,9 +317,6 @@ void run() {
         0, PKT_SIZE*BATCH_SIZE*N_BATCH*sizeof(uint8_t), output[i], 1, &kernel_event[i], &finish_event[i]);
     checkError(status, "Failed to read");
 
-    // status = clEnqueueReadBuffer(queue[i], test_buf[i], CL_FALSE,
-    //     0, PKT_SIZE*BATCH_SIZE*N_BATCH*sizeof(uint8_t), test_out[i], 1, &kernel_event[i], &finish_event2[i]);
-    // checkError(status, "Failed to launch read test");
   
   }
 
@@ -373,9 +370,7 @@ void run() {
       }
   }
 
-  // for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH; ++j){
-  //     printf("%d\n",test_out[0][j]);
-  // }
+  
   printf("\nVerification: %s\n", pass ? "PASS" : "FAIL");
 }
 
@@ -427,7 +422,7 @@ int main(int argc, char **argv) {
   init_problem();
 
   // Run the kernel.
-  for(int i=0;i<5;i++){
+  for(int i=0;i<1;i++){
     run();
   }
   

@@ -4,7 +4,7 @@
 #define BATCH_SIZE 4 // batch size N
 #define MAX_DEGREE 16 // K   MAX
 #define N_BATCH 20
-#define MAX_NUM_BATCH 30 // used only at buffer creation
+#define MAX_NUM_BATCH 20 // used only at buffer creation
 #define FILE_SIZE PKT_SIZE*PKT_NUM
 
 #ifndef GCC

@@ -33,8 +33,8 @@ int address_interpretor(int x, int y, int offset, __global const uint8_t* restri
 __kernel
 // __attribute__((num_simd_work_items(SIMD_TS)))
 __attribute__((num_compute_units(CMP_UNIT)))
-__attribute__((max_work_group_size(TS*TS*MAX_NUM_BATCH))) 
-// __attribute__((reqd_work_group_size(TS,TS,NUM_BATCH))) 
+// __attribute__((max_work_group_size(TS*TS*MAX_NUM_BATCH))) 
+__attribute__((reqd_work_group_size(TS,TS,1))) 
 void myGEMM2(
             __global const uint8_t* restrict  A, // file to be encoded cached
             __global const uint8_t* restrict  B, // Generator matrix cached
@@ -49,18 +49,15 @@ void myGEMM2(
     const int globalRow = TS*get_group_id(0) + row; // Row ID of C (0..M)
     const int globalCol = TS*get_group_id(1) + col; // Col ID of C (0..N)
     const int batch_id = get_global_id(2); // max: N_BATCH
-    // const int num_batch = get_local_size(2);
+
     // Local memory to fit a tile of TS*TS elements of A and B
-    __local uint8_t Asub[TS][TS];
-    __local uint8_t Bsub[TS][TS];
+    __local uint8_t Asub[TS][TS][MAX_NUM_BATCH];
+    __local uint8_t Bsub[TS][TS][MAX_NUM_BATCH];
     __local uint8_t degrees[MAX_NUM_BATCH];
     int deg_offset = 0;
     uint8_t acc = 0;
-
-    // for(int i=0;i<num_batch;i++){
-    //     degrees[i] = DEGREE_[i];
-    // }
     // load degrees and calculate offsets
+    // printf("Tile no: %d Group:[%d,%d] Global:(%d,%d)\n",0,get_group_id(0),get_group_id(1),get_global_id(0),get_global_id(1));
   
     degrees[batch_id] = DEGREE_[batch_id];
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -72,8 +69,10 @@ void myGEMM2(
         deg_offset += degrees[i];
     }
     barrier(CLK_LOCAL_MEM_FENCE);
+
     // Loop over all tiles
     int numTiles = my_deg/TS;
+    int A_vec;
     #pragma ii 1
     for (int t=0; t<numTiles; t++) {
  
@@ -82,25 +81,26 @@ void myGEMM2(
         int tiledCol = TS*t + col; // tile space
         int A_x = tiledCol; // A space
         int A_y = globalRow;// A space
-        const int A_vec = address_interpretor(A_x,A_y,deg_offset,sample_idx); // get vectorized position idx in file
-        Asub[row][col] = A[A_vec]; // swap row and col for Asub and Bsub
-        // Asub[row][col] = A[tiledCol*PKT_SIZE + globalRow + PKT_SIZE*deg_offset]; // swap row and col for Asub and Bsub
-        Bsub[col][row] = B[globalCol*my_deg + tiledRow + deg_offset*BATCH_SIZE];
-   
+
+        A_vec = address_interpretor(A_x,A_y,deg_offset,sample_idx); // get vectorized position idx in file
+
+        Asub[row][col][batch_id] = A[A_vec];         
+        Bsub[col][row][batch_id] = B[globalCol*my_deg + tiledRow + deg_offset*BATCH_SIZE];
 
         // Synchronise to make sure the tile is loaded
         barrier(CLK_LOCAL_MEM_FENCE);
- 
+        
         // Perform the computation for a single tile
         #pragma unroll
         for (int k=0; k<TS; k++) {
-            acc ^= gf_mu_x86(Asub[row][k] , Bsub[col][k]); // now we can access Asub and Bsun in consecutive order
+            acc ^= gf_mu_x86(Asub[row][k][batch_id] , Bsub[col][k][batch_id]); // now we can access Asub and Bsun in consecutive order
+
         }
- 
+
         // Synchronise before loading the next tile
         barrier(CLK_LOCAL_MEM_FENCE);
     }
- 
+    
     // Store the final result in C
     C[globalCol*PKT_SIZE + globalRow + batch_id*PKT_SIZE*BATCH_SIZE] = acc;
 

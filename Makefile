@@ -41,7 +41,7 @@ endif
 
 # OpenCL compile and link flags.
 AOCL_COMPILE_CONFIG := $(shell aocl compile-config )
-AOCL_LINK_CONFIG := $(shell aocl link-config )
+AOCL_LINK_CONFIG := $(shell aocl link-config ) 
 
 # Compilation flags
 ifeq ($(DEBUG),1)
@@ -58,7 +58,7 @@ TARGET := host
 TARGET_DIR := ../bin
 TARGET_FPGA := myGEMM2
 # Directories
-INC_DIRS := ../common/inc ./include
+INC_DIRS := ../common/inc ./include 
 LIB_DIRS := 
 
 # Files
@@ -90,7 +90,7 @@ matrix-gen:
 	g++ ./tool/test_matrix_gen.cpp -I include -o ../bin/test_matrix_gen.out
 	../bin/test_matrix_gen.out
 	rm ../bin/test_matrix_gen.out
-	
+
 # Standard make targets
 clean :
 	$(ECHO)rm -f $(TARGET_DIR)/$(TARGET)
