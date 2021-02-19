@@ -42,7 +42,7 @@ void myGEMM2(
             __global volatile uint8_t* restrict DEGREE_,
             __global const uint8_t* restrict sample_idx // cached
             ) {
-    
+    sssssss
     // Thread identifiers
     const int row = get_local_id(0); // Local row ID (max: TS) (tile space)
     const int col = get_local_id(1); // Local col ID (max: TS)
@@ -56,19 +56,19 @@ void myGEMM2(
     __local uint8_t degrees[MAX_NUM_BATCH];
     int deg_offset = 0;
     uint8_t acc = 0;
+    uint8_t my_deg = degrees[batch_id];
+
     // load degrees and calculate offsets
     // printf("Tile no: %d Group:[%d,%d] Global:(%d,%d)\n",0,get_group_id(0),get_group_id(1),get_global_id(0),get_global_id(1));
   
     degrees[batch_id] = DEGREE_[batch_id];
     barrier(CLK_LOCAL_MEM_FENCE);
     
-    uint8_t my_deg = degrees[batch_id];
     
     #pragma ii 1
     for(int i=0;i<batch_id;i++){
         deg_offset += degrees[i];
     }
-    barrier(CLK_LOCAL_MEM_FENCE);
 
     // Loop over all tiles
     int numTiles = my_deg/TS;
@@ -94,7 +94,6 @@ void myGEMM2(
         #pragma unroll
         for (int k=0; k<TS; k++) {
             acc ^= gf_mu_x86(Asub[row][k][batch_id] , Bsub[col][k][batch_id]); // now we can access Asub and Bsun in consecutive order
-
         }
 
         // Synchronise before loading the next tile
