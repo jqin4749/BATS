@@ -56,7 +56,7 @@ CXX := arm-linux-gnueabihf-g++
 # Target
 TARGET := host
 TARGET_DIR := ../bin
-TARGET_FPGA := myGEMM2
+TARGET_FPGA := myGEMM6
 # Directories
 INC_DIRS := ../common/inc ./include 
 LIB_DIRS := 
@@ -81,7 +81,7 @@ $(TARGET_DIR) :
 	$(ECHO)mkdir $(TARGET_DIR)
 
 FPGA :
-	aoc dev/myGEMM2.cl -o ../bin/myGEMM2 -I include -no-interleaving=default
+	aoc dev/myGEMM6.cl -o ../bin/myGEMM6 -I include -no-interleaving=default
 	rm -r ~/sopc_altera*
 FPGA-report :
 	aoc -c ./dev/$(TARGET_FPGA).cl -o ../bin/$(TARGET_FPGA) -I include	-report -no-interleaving=default

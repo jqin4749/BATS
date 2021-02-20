@@ -72,6 +72,7 @@ void myGEMM2(
     // Loop over all tiles
     int numTiles = my_deg/TS;
     int A_vec;
+    barrier(CLK_LOCAL_MEM_FENCE);
     #pragma ii 1
     for (int t=0; t<numTiles; t++) {
  

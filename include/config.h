@@ -12,11 +12,11 @@
 #define uint8_t unsigned char
 #endif
 
-#define TSM 128                // The tile-size in dimension M
-#define TSN 128                // The tile-size in dimension N
-#define TSK 16                 // The tile-size in dimension K
+#define TSM 64                // The tile-size in dimension M
+#define TSN 4                // The tile-size in dimension N
+#define TSK 4                 // The tile-size in dimension K
 #define WPTM 8                 // The work-per-thread in dimension M
-#define WPTN 8                 // The work-per-thread in dimension N
+#define WPTN 4                 // The work-per-thread in dimension N
 #define RTSM (TSM/WPTM)        // The reduced tile-size in dimension M
 #define RTSN (TSN/WPTN)        // The reduced tile-size in dimension N
 #define LPTA ((TSK*TSM)/(RTSM*RTSN)) // Loads-per-thread for A

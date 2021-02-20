@@ -1,8 +1,43 @@
+#include "config.h"
+
+uint8_t gf_mu_x86(uint8_t a, uint8_t b) {
+	uint8_t p = 0; /* the product of the multiplication */
+    #pragma unroll
+	for (int i=0;i<8;i++){
+            // if (!(a && b)){
+            //         break;
+            //     }
+            if (b & 1) /* if b is odd, then add the corresponding a to p (final product = sum of all a's corresponding to odd b's) */
+                p ^= a; /* since we're in GF(2^m), addition is an XOR */
+
+            if (a & 0x80) /* GF modulo: if a >= 128, then it will overflow when shifted left, so reduce */
+                a = (a << 1) ^ 0x11D; /* XOR with the primitive polynomial x^8 + x^4 + x^3 + x + 1 (0b1_0001_1011) – you can change it but it must be irreducible */
+            else
+                a <<= 1; /* equivalent to a*2 */
+            b >>= 1; /* equivalent to b // 2 */
+            
+	}
+	return p;
+}
+
+int address_interpretor(int x, int y, int offset, __global const uint8_t* restrict sample_idx){
+    // use x to find index of required packet (file space) in sample_idx    
+    uint8_t file_pkt_idx = sample_idx[offset+x];
+    // calculate idx of required data in file space
+    return file_pkt_idx*PKT_SIZE + y;
+}
+
 // Use 2D register blocking (further increase in work per thread)
-__kernel void myGEMM6(const int M, const int N, const int K,
-                      __global const uint8_t* restrict A,
-                      __global const uint8_t* restrict B,
-                      __global uint8_t* restrict C
+__kernel 
+// __attribute__((num_compute_units(CMP_UNIT)))
+// __attribute__((max_work_group_size(4*4*MAX_NUM_BATCH))) 
+__attribute__((reqd_work_group_size(TSM/WPTM, TSN/WPTN, 1))) 
+void myGEMM6(
+            __global const uint8_t* restrict A,
+            __global volatile uint8_t* restrict B,
+            __global uint8_t* restrict C,
+            __global volatile uint8_t* restrict DEGREE_,
+            __global const uint8_t* restrict sample_idx // cached
                       ) {
                 
 
@@ -16,11 +51,11 @@ __kernel void myGEMM6(const int M, const int N, const int K,
     // Local memory to fit a tile of A and B
     __local uint8_t Asub[TSK][TSM][MAX_NUM_BATCH];
     __local uint8_t Bsub[TSN][TSK+2][MAX_NUM_BATCH];
-    __local uint8_t degrees[MAX_NUM_BATCH];
     // Allocate register space
     uint8_t Areg;
     uint8_t Breg[WPTN];
     uint8_t acc[WPTM][WPTN];
+    int deg_offset = 0;
 
     // Initialise the accumulation registers
     #pragma unroll
@@ -31,70 +66,72 @@ __kernel void myGEMM6(const int M, const int N, const int K,
         }
     }
     
-    // Load degrees
-    if(tidm == 0 && tidn == 0){
-        degrees[batch_id] = DEGREE_[batch_id];
+    // Load degrees and calculate offsets
+    uint8_t my_deg = DEGREE_[batch_id];
+    for(int i=0;i<batch_id;i++){
+        deg_offset += DEGREE_[i];
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    uint8_t my_deg = degrees[batch_id];
 
     // Loop over all tiles
-    const int numTiles = K/TSK;
-    int t=0;
-    do {
+    const int numTiles = my_deg/TSK;
+    // barrier(CLK_LOCAL_MEM_FENCE);
+    // printf("Group:[%d,%d] Global:(%d,%d): %d\n",get_group_id(0),get_group_id(1),get_global_id(0),get_global_id(1),numTiles);
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for(int t=0;t<numTiles;t++){
 
         // Load one tile of A and B into local memory
-        #pragma unroll
+        // #pragma unroll
         for (int la=0; la<LPTA; la++) {
             int tid = tidn*RTSM + tidm;
             int id = la*RTSN*RTSM + tid;
             int row = MOD2(id,TSM);
             int col = DIV2(id,TSM);
             int tiledIndex = TSK*t + col;
-            Asub[col][row] = A[tiledIndex*M + offsetM + row];
-            Bsub[row][col] = B[tiledIndex*N + offsetN + row];
+            int A_vec = address_interpretor(tiledIndex, offsetM + row, deg_offset,sample_idx);
+            // Asub[col][row] = A[tiledIndex*PKT_SIZE + offsetM + row];
+            Asub[col][row][batch_id] = A[A_vec];
+            Bsub[row][col][batch_id] = B[tiledIndex*BATCH_SIZE + offsetN + row + deg_offset*BATCH_SIZE];
         }
 
         // Synchronise to make sure the tile is loaded
         barrier(CLK_LOCAL_MEM_FENCE);
 
         // Loop over the values of a single tile
+        // #pragma unroll
         for (int k=0; k<TSK; k++) {
-
             // Cache the values of Bsub in registers
             #pragma unroll
             for (int wn=0; wn<WPTN; wn++) {
                 int col = tidn + wn*RTSN;
-                Breg[wn] = Bsub[col][k];
+                Breg[wn] = Bsub[col][k][batch_id];
             }
 
             // Perform the computation
             #pragma unroll
             for (int wm=0; wm<WPTM; wm++) {
                 int row = tidm + wm*RTSM;
-                Areg = Asub[k][row];
+                Areg = Asub[k][row][batch_id];
                 #pragma unroll
                 for (int wn=0; wn<WPTN; wn++) {
-                    acc[wm][wn] += Areg * Breg[wn];
+                    acc[wm][wn] ^= gf_mu_x86(Areg , Breg[wn]);
                 }
             }
         }
 
         // Synchronise before loading the next tile
         barrier(CLK_LOCAL_MEM_FENCE);
-
-        // Next tile
-        t++;
-    } while (t<numTiles);
+    }
 
     // Store the final results in C
-    #pragma unroll
+    // #pragma unroll
     for (int wm=0; wm<WPTM; wm++) {
         int globalRow = offsetM + tidm + wm*RTSM;
         #pragma unroll
         for (int wn=0; wn<WPTN; wn++) {
-            int globalCol = offsetN + tidn + wn*RTSN;
-            C[globalCol*M + globalRow] = acc[wm][wn];
+            int globalCol = offsetN + tidn + wn*RTSN; 
+            C[globalCol*PKT_SIZE + globalRow + batch_id*PKT_SIZE*BATCH_SIZE] = acc[wm][wn];
         }
     }
+    
 }

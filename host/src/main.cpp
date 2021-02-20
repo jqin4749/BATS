@@ -86,7 +86,7 @@ bool init_opencl()
 
   // Create the program for all device. Use the first device as the
   // representative device (assuming all device are of the same type).
-  std::string binary_file = getBoardBinaryFile("myGEMM2", device[0]);
+  std::string binary_file = getBoardBinaryFile("myGEMM6", device[0]);
   printf("Using AOCX: %s\n", binary_file.c_str());
   program = createProgramFromBinary(context, binary_file.c_str(), device, num_devices);
 
@@ -119,7 +119,7 @@ bool init_opencl()
     checkError(status, "Failed to create command queue");
 
     // Kernel.
-    const char *kernel_name = "myGEMM2";
+    const char *kernel_name = "myGEMM6";
     kernel[i] = clCreateKernel(program, kernel_name, &status);
     checkError(status, "Failed to create kernel");
 
@@ -304,8 +304,8 @@ void run() {
 
     // Enqueue kernel.
    
-    const size_t global[3] = { PKT_SIZE, BATCH_SIZE, N_BATCH };
-    const size_t local[3] = { TS, TS, 1 };
+    const size_t global[3] = {  PKT_SIZE/WPTM, BATCH_SIZE/WPTN, N_BATCH };
+    const size_t local[3] = { TSM/WPTM, TSN/WPTN, 1 };
     // printf("Launching for device %d (%zd elements)\n", i, global_work_size);
 
     status = clEnqueueNDRangeKernel(queue[i], kernel[i], 3, NULL,
@@ -375,7 +375,7 @@ void run() {
 }
 
 void cleanup() {
-
+  
   for(unsigned i = 0; i < num_devices; ++i) {
     if(kernel && kernel[i]) {
       clReleaseKernel(kernel[i]);
@@ -394,13 +394,14 @@ void cleanup() {
     }
 
   }
-
   if(program) {
     clReleaseProgram(program);
   }
   if(context) {
     clReleaseContext(context);
   }
+
+
 }
 
 
