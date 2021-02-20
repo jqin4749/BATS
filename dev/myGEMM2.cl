@@ -56,13 +56,12 @@ void myGEMM2(
     __local uint8_t degrees[MAX_NUM_BATCH];
     int deg_offset = 0;
     uint8_t acc = 0;
-    uint8_t my_deg = degrees[batch_id];
-
     // load degrees and calculate offsets
     // printf("Tile no: %d Group:[%d,%d] Global:(%d,%d)\n",0,get_group_id(0),get_group_id(1),get_global_id(0),get_global_id(1));
   
     degrees[batch_id] = DEGREE_[batch_id];
     barrier(CLK_LOCAL_MEM_FENCE);
+    uint8_t my_deg = degrees[batch_id];
     
     
     #pragma ii 1

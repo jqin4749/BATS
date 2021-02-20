@@ -12,13 +12,19 @@
 #define uint8_t unsigned char
 #endif
 
-#define TS 4
+#define TSM 128                // The tile-size in dimension M
+#define TSN 128                // The tile-size in dimension N
+#define TSK 16                 // The tile-size in dimension K
+#define WPTM 8                 // The work-per-thread in dimension M
+#define WPTN 8                 // The work-per-thread in dimension N
+#define RTSM (TSM/WPTM)        // The reduced tile-size in dimension M
+#define RTSN (TSN/WPTN)        // The reduced tile-size in dimension N
+#define LPTA ((TSK*TSM)/(RTSM*RTSN)) // Loads-per-thread for A
+#define LPTB ((TSK*TSN)/(RTSM*RTSN)) // Loads-per-thread for B
+
 #define SIMD_TS 2
 #define CMP_UNIT 2
-
 #define SEED 2021
 
-
-
-#define WPT 8                        // The amount of work-per-thread, i.e. the thread-coarsening factor
-#define RTS (TS/WPT)                 // The reduced tile-size in one dimension
+#define MOD2(x,y) ((x) % (y))
+#define DIV2(x,y) ((x) / (y))
