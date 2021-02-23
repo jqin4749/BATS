@@ -65,15 +65,16 @@ int main(){
     // print arrays
     // A (PKT_SIZE,DEGREE)
     uint8_t input_file[FILE_SIZE];
-    for(int j=0;j<FILE_SIZE;j++){
-        
-        uint8_t num = rand() % 256;
-        input_file[j] = num;
-        n = sprintf(buf,"%d,",num);
-        myfile << buf;
-        if(j % 50 ==0){
-            myfile << "\n\t\t";
+    int c=0;
+    for(int j=0;j<PKT_NUM;j++){
+        for(int i=0;i<PKT_SIZE;i++){
+            uint8_t num = rand() % 256;
+            input_file[c] = num;
+            n = sprintf(buf,"%d,",num);
+            myfile << buf;
+            c++;
         }
+        myfile << "\n\t\t";
     }
     myfile << "\n\t}; // FILE_SIZE\n";
     
@@ -93,14 +94,22 @@ int main(){
     }
     myfile << "}; // N_BATCH\n";
 
-    // generate sample idx
-    uint8_t sample_idx[N_BATCH*MAX_DEGREE]={0};
+    n = sprintf(buf,"\n\nstatic int offset_list[%d] = {",N_BATCH);
+    myfile << buf;
     int offset_list[N_BATCH]={0};
     for(int j=0;j<N_BATCH;j++){
       for(int jj=0;jj<j;jj++){
         offset_list[j] += deg_list[jj];
       }
     }
+    for(int i=0;i<N_BATCH;i++){
+        n = sprintf(buf,"%d,",offset_list[i]);
+        myfile << buf;
+    }
+    myfile << "}; // N_BATCH\n";
+
+    // generate sample idx
+    uint8_t sample_idx[N_BATCH*MAX_DEGREE]={0};
 
     n = sprintf(buf,"\n\nstatic uint8_t sample_idx[%d] = {\n\t\t",get_sampleIdx_size<N_BATCH>(deg_list,N_BATCH));
     myfile << buf;

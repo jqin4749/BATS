@@ -2,9 +2,9 @@
 #define PKT_SIZE 1024 // pkt size M
 #define PKT_NUM 64
 #define BATCH_SIZE 4 // batch size N
-#define MAX_DEGREE 16 // K   MAX
+#define MAX_DEGREE 64 // K   MAX
 #define N_BATCH 20
-#define MAX_NUM_BATCH 20 // used only at buffer creation
+#define MAX_NUM_BATCH N_BATCH // used only at buffer creation
 #define FILE_SIZE PKT_SIZE*PKT_NUM
 
 #ifndef GCC
@@ -19,9 +19,10 @@
 #define WPTN 4                 // The work-per-thread in dimension N
 #define RTSM (TSM/WPTM)        // The reduced tile-size in dimension M
 #define RTSN (TSN/WPTN)        // The reduced tile-size in dimension N
-#define LPTA ((TSK*TSM)/(RTSM*RTSN)) // Loads-per-thread for A
-#define LPTB ((TSK*TSN)/(RTSM*RTSN)) // Loads-per-thread for B
-
+#define LPTA ((TSK*TSM)/(RTSM*RTSN)) // Loads-per-thread for A 32
+#define LPTB ((TSK*TSN)/(RTSM*RTSN)) // Loads-per-thread for B 2
+// const size_t global[3] = {  PKT_SIZE/WPTM, BATCH_SIZE/WPTN, N_BATCH };
+// const size_t local[3] = { TSM/WPTM, TSN/WPTN, 1 };
 #define SIMD_TS 2
 #define CMP_UNIT 2
 #define SEED 2021

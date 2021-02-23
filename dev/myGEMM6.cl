@@ -30,14 +30,15 @@ int address_interpretor(int x, int y, int offset, __global const uint8_t* restri
 // Use 2D register blocking (further increase in work per thread)
 __kernel 
 // __attribute__((num_compute_units(CMP_UNIT)))
-// __attribute__((max_work_group_size(4*4*MAX_NUM_BATCH))) 
-__attribute__((reqd_work_group_size(TSM/WPTM, TSN/WPTN, 1))) 
+// __attribute__((max_work_group_size(256))) 
+__attribute__((reqd_work_group_size(TSM/WPTM, TSN/WPTN, 1)))  // 8, 1, 1
 void myGEMM6(
             __global const uint8_t* restrict A,
-            __global volatile uint8_t* restrict B,
+            __global const uint8_t* restrict B,
             __global uint8_t* restrict C,
-            __global volatile uint8_t* restrict DEGREE_,
-            __global const uint8_t* restrict sample_idx // cached
+            __global const uint8_t* restrict DEGREE_,
+            __global const uint8_t* restrict sample_idx, // cached
+            __global const int* restrict DEGREE_OFF
                       ) {
                 
 
@@ -49,13 +50,15 @@ void myGEMM6(
     const int batch_id = get_global_id(2); // max: N_BATCH
 
     // Local memory to fit a tile of A and B
-    __local uint8_t Asub[TSK][TSM][MAX_NUM_BATCH];
-    __local uint8_t Bsub[TSN][TSK+2][MAX_NUM_BATCH];
+    __local uint8_t Asub[TSK][TSM];
+    __local uint8_t Bsub[TSM][TSK];
+    int deg_offset; // private
+    uint8_t my_deg; // private
     // Allocate register space
     uint8_t Areg;
     uint8_t Breg[WPTN];
     uint8_t acc[WPTM][WPTN];
-    int deg_offset = 0;
+    
 
     // Initialise the accumulation registers
     #pragma unroll
@@ -66,18 +69,13 @@ void myGEMM6(
         }
     }
     
-    // Load degrees and calculate offsets
-    uint8_t my_deg = DEGREE_[batch_id];
-    for(int i=0;i<batch_id;i++){
-        deg_offset += DEGREE_[i];
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
+    // load degrees and calculate offsets    
+    my_deg = DEGREE_[batch_id];                                                                                          
+    deg_offset = DEGREE_OFF[batch_id];                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+    // barrier(CLK_LOCAL_MEM_FENCE);
+    // printf("%d,%d,%d\n",get_global_id(2),my_deg,deg_offset);                                                                                                                    
     // Loop over all tiles
     const int numTiles = my_deg/TSK;
-    // barrier(CLK_LOCAL_MEM_FENCE);
-    // printf("Group:[%d,%d] Global:(%d,%d): %d\n",get_group_id(0),get_group_id(1),get_global_id(0),get_global_id(1),numTiles);
-    barrier(CLK_LOCAL_MEM_FENCE);
     for(int t=0;t<numTiles;t++){
 
         // Load one tile of A and B into local memory
@@ -87,11 +85,12 @@ void myGEMM6(
             int id = la*RTSN*RTSM + tid;
             int row = MOD2(id,TSM);
             int col = DIV2(id,TSM);
+            
             int tiledIndex = TSK*t + col;
             int A_vec = address_interpretor(tiledIndex, offsetM + row, deg_offset,sample_idx);
             // Asub[col][row] = A[tiledIndex*PKT_SIZE + offsetM + row];
-            Asub[col][row][batch_id] = A[A_vec];
-            Bsub[row][col][batch_id] = B[tiledIndex*BATCH_SIZE + offsetN + row + deg_offset*BATCH_SIZE];
+            Asub[col][row] = A[A_vec];
+            Bsub[row][col]= B[tiledIndex*BATCH_SIZE + offsetN + row + deg_offset*BATCH_SIZE];
         }
 
         // Synchronise to make sure the tile is loaded
@@ -104,14 +103,15 @@ void myGEMM6(
             #pragma unroll
             for (int wn=0; wn<WPTN; wn++) {
                 int col = tidn + wn*RTSN;
-                Breg[wn] = Bsub[col][k][batch_id];
+                Breg[wn] = Bsub[col][k];
             }
 
             // Perform the computation
             #pragma unroll
             for (int wm=0; wm<WPTM; wm++) {
                 int row = tidm + wm*RTSM;
-                Areg = Asub[k][row][batch_id];
+
+                Areg = Asub[k][row];
                 #pragma unroll
                 for (int wn=0; wn<WPTN; wn++) {
                     acc[wm][wn] ^= gf_mu_x86(Areg , Breg[wn]);

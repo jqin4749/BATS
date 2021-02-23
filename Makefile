@@ -81,10 +81,15 @@ $(TARGET_DIR) :
 	$(ECHO)mkdir $(TARGET_DIR)
 
 FPGA :
-	aoc dev/myGEMM6.cl -o ../bin/myGEMM6 -I include -no-interleaving=default
+	aoc dev/myGEMM6.cl -o ../bin/myGEMM6 -I include 
 	rm -r ~/sopc_altera*
+
+FPGA-profile :
+	aoc -profile dev/myGEMM6.cl -o ../bin/profile/myGEMM6 -I include 
+	rm -r ~/sopc_altera*
+
 FPGA-report :
-	aoc -c ./dev/$(TARGET_FPGA).cl -o ../bin/$(TARGET_FPGA) -I include	-report -no-interleaving=default
+	aoc -c ./dev/$(TARGET_FPGA).cl -o ../bin/$(TARGET_FPGA) -I include	-report 
 
 matrix-gen:
 	g++ ./tool/test_matrix_gen.cpp -I include -o ../bin/test_matrix_gen.out

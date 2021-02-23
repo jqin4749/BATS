@@ -22,21 +22,29 @@ scoped_array<cl_mem> input_b_buf; // num_devices elements
 scoped_array<cl_mem> input_DE_buf; // num_devices elements
 scoped_array<cl_mem> output_buf; // num_devices elements
 scoped_array<cl_mem> input_sample_buf; // num_devices elements
-scoped_array<cl_mem> test_buf; // num_devices elements
+scoped_array<cl_mem> input_DEOFF_buf; // num_devices elements
 
-scoped_array<scoped_aligned_ptr<uint8_t> > input_a, input_b, input_deg, input_sample_idx, test_out; // num_devices elements
+
+// scoped_array<scoped_aligned_ptr<uint8_t> > input_a, input_b, input_deg, input_sample_idx, test_out; // num_devices elements
 scoped_array<scoped_aligned_ptr<uint8_t> > output; // num_devices elements
-
 scoped_array<scoped_array<uint8_t> > ref_output; // num_devices elements
-scoped_array<unsigned> n_per_device; // num_devices elements
-// Problem data.
-unsigned N = 1000000; // problem size
+
+// scoped_array<unsigned> n_per_device; // num_devices elements
+
 // Function prototypes
 bool init_opencl();
 void init_problem();
 void run();
 void cleanup();
 
+template<int N_BATCH_>
+int get_B_size(uint8_t deg_list[N_BATCH_],int n_batch){
+    int len = 0;
+    for(int i=0;i<n_batch;i++){
+        len+=deg_list[i];
+    }    
+    return len*BATCH_SIZE;
+}
 
 uint8_t gf_mu_x86(uint8_t a, uint8_t b) {
 	uint8_t p = 0; /* the product of the multiplication */
@@ -97,13 +105,16 @@ bool init_opencl()
   // Create per-device objects.
   queue.reset(num_devices);
   kernel.reset(num_devices);
-  n_per_device.reset(num_devices);
 
   input_a_buf.reset(num_devices);
   input_b_buf.reset(num_devices);
   input_DE_buf.reset(num_devices);
+  input_DEOFF_buf.reset(num_devices);
   output_buf.reset(num_devices);
   input_sample_buf.reset(num_devices);
+
+  // test_deg_buf.reset(num_devices);
+  // test_off_buf.reset(num_devices);
   // test_buf.reset(num_devices);
 
   // input_a.reset(num_devices);
@@ -111,6 +122,8 @@ bool init_opencl()
   // input_deg.reset(num_devices);
   output.reset(num_devices);
   ref_output.reset(num_devices);
+  // test_deg.reset(num_devices);
+  // test_off.reset(num_devices);
   // input_sample_idx.reset(num_devices);
   // test_out.reset(num_devices);
   for(unsigned i = 0; i < num_devices; ++i) {
@@ -123,14 +136,6 @@ bool init_opencl()
     kernel[i] = clCreateKernel(program, kernel_name, &status);
     checkError(status, "Failed to create kernel");
 
-    // Determine the number of elements processed by this device.
-    n_per_device[i] = N / num_devices; // number of elements handled by this device
-
-    // Spread out the remainder of the elements over the first
-    // N % num_devices.
-    if(i < (N % num_devices)) {
-      n_per_device[i]++;
-    }
     // Input buffers.
     input_a_buf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY,
     FILE_SIZE * sizeof(uint8_t), NULL, &status);
@@ -154,6 +159,9 @@ bool init_opencl()
     PKT_SIZE*BATCH_SIZE* MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
     checkError(status, "Failed to create buffer for output");
     
+    input_DEOFF_buf[i] = clCreateBuffer(context, CL_MEM_READ_ONLY,
+    MAX_NUM_BATCH * sizeof(int), NULL, &status);
+    checkError(status, "Failed to create buffer for input DE");
   
     // Set kernel arguments.
 
@@ -170,7 +178,13 @@ bool init_opencl()
     checkError(status, "Failed to set argument %d", 3);
 
     status = clSetKernelArg(kernel[i], 4, sizeof(cl_mem), &input_sample_buf[i]);
-    checkError(status, "Failed to set argument %d", 3);
+    checkError(status, "Failed to set argument %d", 4);
+
+    status = clSetKernelArg(kernel[i], 5, sizeof(cl_mem), &input_DEOFF_buf[i]);
+    checkError(status, "Failed to set argument %d", 5);
+
+    // status = clSetKernelArg(kernel[i], 6, sizeof(cl_mem), &test_off_buf[i]);
+    // checkError(status, "Failed to set argument %d", 6);
 
 
     }
@@ -199,6 +213,9 @@ void init_problem() {
 
   output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
   ref_output[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
+
+  // test_deg[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
+  // test_off[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
   // test_out[i].reset(PKT_SIZE*BATCH_SIZE*N_BATCH);
     // for (int b=0;b<N_BATCH;b++){
     //   input_deg[i][b] = deg_list[b];
@@ -219,12 +236,7 @@ void init_problem() {
     printf("computing golden ref\n");
     // computing golden reference
     // got the offsets
-    int offset_list[N_BATCH]={0};
-    for(int j=0;j<N_BATCH;j++){
-      for(int jj=0;jj<j;jj++){
-        offset_list[j] += deg_list[jj];
-      }
-    }
+    
     
     
     // construct naive matrix A (PKT_SIZE,DEGREE,N_BATCH)s
@@ -242,7 +254,19 @@ void init_problem() {
         }
       }
     }
-   
+    int b_size = get_B_size<N_BATCH>(deg_list,N_BATCH);
+    uint8_t* B_trans = (uint8_t*)malloc(b_size);
+    count = 0;
+    for(int b=0;b<N_BATCH;b++){
+      int d = deg_list[b];
+      for(int j=0;j<BATCH_SIZE;j++){
+        for(int k=0;k<d;k++){
+          B_trans[count] = B[k*BATCH_SIZE+j + BATCH_SIZE*offset_list[b]];
+          count++;
+        }
+      }
+    }
+    
     // compute golden A * matrix B
     for(int b=0;b<N_BATCH;b++){
       int d = deg_list[b];
@@ -250,15 +274,17 @@ void init_problem() {
           for (int n=0; n<BATCH_SIZE; n++) {
               uint8_t acc = 0;
               for (int k=0; k<d; k++) {
-                  acc ^= gf_mu_x86(golden_A[k*PKT_SIZE + m + PKT_SIZE*offset_list[b]],B[n*d + k + BATCH_SIZE*offset_list[b]]);
+                  acc ^= gf_mu_x86(golden_A[k*PKT_SIZE + m + PKT_SIZE*offset_list[b]],B_trans[n*d + k + BATCH_SIZE*offset_list[b]]);
               }
               ref_output[i][n*PKT_SIZE + m + b*PKT_SIZE*BATCH_SIZE] = acc;
               // printf("%d,",acc);
           }
       }
     }
+    free(B_trans);
   }
   printf("finished init problem\n");
+  
 }
 
 
@@ -274,7 +300,7 @@ void run() {
   scoped_array<cl_event> finish_event(num_devices);
   scoped_array<cl_event> finish_event2(num_devices);
 
-  cl_event write_event[4];
+  cl_event write_event[5];
   for(unsigned i = 0; i < num_devices; ++i) {
 
 
@@ -287,24 +313,27 @@ void run() {
     checkError(status, "Failed to transfer input A");
 
     status = clEnqueueWriteBuffer(queue[i], input_b_buf[i], CL_FALSE,
-        0, sizeof(B) * sizeof(uint8_t), B, 0, NULL, &write_event[1]);
+        0, sizeof(B) , B, 0, NULL, &write_event[1]);
     checkError(status, "Failed to transfer input B");
 
     status = clEnqueueWriteBuffer(queue[i], input_DE_buf[i], CL_FALSE,
-        0, sizeof(deg_list)*sizeof(uint8_t), deg_list, 0, NULL, &write_event[2]);
+        0, sizeof(deg_list), deg_list, 0, NULL, &write_event[2]);
     checkError(status, "Failed to transfer input DE");
 
     status = clEnqueueWriteBuffer(queue[i], input_sample_buf[i], CL_FALSE,
-        0, sizeof(sample_idx)*sizeof(uint8_t), sample_idx, 0, NULL, &write_event[3]);
+        0, sizeof(sample_idx), sample_idx, 0, NULL, &write_event[3]);
     checkError(status, "Failed to transfer sampled idx");
 
-    // status = clEnqueueWriteBuffer(queue[i], test_buf[i], CL_FALSE,
-    //     0, sizeof(sample_idx)*sizeof(uint8_t), test_out[i], 0, NULL, &write_event[3]);
-    // checkError(status, "Failed to transfer sampled idx");
+    status = clEnqueueWriteBuffer(queue[i], input_DEOFF_buf[i], CL_FALSE,
+        0, sizeof(offset_list), offset_list, 0, NULL, &write_event[4]);
+    checkError(status, "Failed to transfer sampled idx");
+
+    printf("%d\n",offset_list[3]);
+
 
     // Enqueue kernel.
    
-    const size_t global[3] = {  PKT_SIZE/WPTM, BATCH_SIZE/WPTN, N_BATCH };
+    const size_t global[3] = {  PKT_SIZE/WPTM, BATCH_SIZE/WPTN, N_BATCH }; // 128, 1, 1
     const size_t local[3] = { TSM/WPTM, TSN/WPTN, 1 };
     // printf("Launching for device %d (%zd elements)\n", i, global_work_size);
 
@@ -316,8 +345,6 @@ void run() {
     status = clEnqueueReadBuffer(queue[i], output_buf[i], CL_FALSE,
         0, PKT_SIZE*BATCH_SIZE*N_BATCH*sizeof(uint8_t), output[i], 1, &kernel_event[i], &finish_event[i]);
     checkError(status, "Failed to read");
-
-  
   }
 
   // Wait for all devices to finish.
@@ -341,6 +368,8 @@ void run() {
     printf("Write 3: %0.3f ms\n", i, double(time_ns) * 1e-6);
     time_ns = getStartEndTime(write_event[3]);
     printf("Write 4: %0.3f ms\n", i, double(time_ns) * 1e-6);
+    time_ns = getStartEndTime(write_event[4]);
+    printf("Write 5: %0.3f ms\n", i, double(time_ns) * 1e-6);
     time_ns = getStartEndTime(finish_event[i]);
     printf("Read: %0.3f ms\n", i, double(time_ns) * 1e-6);
   }
@@ -349,6 +378,7 @@ void run() {
   clReleaseEvent(write_event[1]);
   clReleaseEvent(write_event[2]);
   clReleaseEvent(write_event[3]);
+  clReleaseEvent(write_event[4]);
   // Release all events.
   for(unsigned i = 0; i < num_devices; ++i) {
     clReleaseEvent(kernel_event[i]);
@@ -361,7 +391,7 @@ void run() {
     
       for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH && pass; ++j) {
         // printf("%d,%d\n",output[i][j],ref_output[i][j]);
-        if(output[i][j] != ref_output[i][j]) {
+        if(output[i][j] != ref_output[i][j] ) {
           printf("Failed verification @ device %d, index %d\nOutput: %d\nReference: %d\n",
               i, j, output[i][j], ref_output[i][j]);
           pass = false;
@@ -370,12 +400,17 @@ void run() {
       }
   }
 
-  
+  // for(int j=0;j<PKT_SIZE*BATCH_SIZE*N_BATCH ;j++){
+  //   printf("%d\n",test_deg[0][j]);
+  // }
+  // printf("\n\n\n");
+  // for(int j=0;j<PKT_SIZE*BATCH_SIZE*N_BATCH ;j++){
+  //   printf("%d\n",test_off[0][j]);
+  // }
   printf("\nVerification: %s\n", pass ? "PASS" : "FAIL");
 }
 
 void cleanup() {
-  
   for(unsigned i = 0; i < num_devices; ++i) {
     if(kernel && kernel[i]) {
       clReleaseKernel(kernel[i]);
@@ -392,27 +427,27 @@ void cleanup() {
     if(output_buf && output_buf[i]) {
       clReleaseMemObject(output_buf[i]);
     }
+    if(input_DE_buf && input_DE_buf[i]) {
+      clReleaseMemObject(input_DE_buf[i]);
+    }
+    if(input_sample_buf && input_sample_buf[i]) {
+      clReleaseMemObject(input_sample_buf[i]);
+    }
 
   }
-  if(program) {
-    clReleaseProgram(program);
-  }
+  // if(program) {
+  //   printf("finished\n");
+  //   clReleaseProgram(program);
+    
+  // }
   if(context) {
     clReleaseContext(context);
   }
-
-
 }
 
 
 // Entry point.
 int main(int argc, char **argv) {
-  Options options(argc, argv);
-
-  // Optional argument to specify the problem size.
-  if(options.has("n")) {
-    N = options.get<unsigned>("n");
-  }
 
   // Initialize OpenCL.
   if(!init_opencl()) {
@@ -423,7 +458,7 @@ int main(int argc, char **argv) {
   init_problem();
 
   // Run the kernel.
-  for(int i=0;i<1;i++){
+  for(int i=0;i<5;i++){
     run();
   }
   
