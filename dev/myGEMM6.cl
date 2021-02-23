@@ -29,16 +29,15 @@ int address_interpretor(int x, int y, int offset, __global const uint8_t* restri
 
 // Use 2D register blocking (further increase in work per thread)
 __kernel 
-// __attribute__((num_compute_units(CMP_UNIT)))
-// __attribute__((max_work_group_size(256))) 
+__attribute__((num_compute_units(CMP_UNIT)))
 __attribute__((reqd_work_group_size(TSM/WPTM, TSN/WPTN, 1)))  // 8, 1, 1
 void myGEMM6(
             __global const uint8_t* restrict A,
             __global const uint8_t* restrict B,
             __global uint8_t* restrict C,
-            __global const uint8_t* restrict DEGREE_,
+            __global volatile uint8_t* restrict DEGREE_,
             __global const uint8_t* restrict sample_idx, // cached
-            __global const int* restrict DEGREE_OFF
+            __global volatile int* restrict DEGREE_OFF
                       ) {
                 
 
@@ -71,9 +70,7 @@ void myGEMM6(
     
     // load degrees and calculate offsets    
     my_deg = DEGREE_[batch_id];                                                                                          
-    deg_offset = DEGREE_OFF[batch_id];                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
-    // barrier(CLK_LOCAL_MEM_FENCE);
-    // printf("%d,%d,%d\n",get_global_id(2),my_deg,deg_offset);                                                                                                                    
+    deg_offset = DEGREE_OFF[batch_id];                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
     // Loop over all tiles
     const int numTiles = my_deg/TSK;
     for(int t=0;t<numTiles;t++){
@@ -88,7 +85,6 @@ void myGEMM6(
             
             int tiledIndex = TSK*t + col;
             int A_vec = address_interpretor(tiledIndex, offsetM + row, deg_offset,sample_idx);
-            // Asub[col][row] = A[tiledIndex*PKT_SIZE + offsetM + row];
             Asub[col][row] = A[A_vec];
             Bsub[row][col]= B[tiledIndex*BATCH_SIZE + offsetN + row + deg_offset*BATCH_SIZE];
         }
@@ -130,6 +126,9 @@ void myGEMM6(
         #pragma unroll
         for (int wn=0; wn<WPTN; wn++) {
             int globalCol = offsetN + tidn + wn*RTSN; 
+            // if(get_group_id(0)==0 && get_group_id(1)==0){
+            //     printf("(%d,%d):%d\n",get_local_id(0),get_local_id(1),globalCol*PKT_SIZE + globalRow + batch_id*PKT_SIZE*BATCH_SIZE);
+            // }
             C[globalCol*PKT_SIZE + globalRow + batch_id*PKT_SIZE*BATCH_SIZE] = acc[wm][wn];
         }
     }

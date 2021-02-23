@@ -12,7 +12,7 @@
 #define uint8_t unsigned char
 #endif
 
-#define TSM 64                // The tile-size in dimension M
+#define TSM 128                // The tile-size in dimension M
 #define TSN 4                // The tile-size in dimension N
 #define TSK 4                 // The tile-size in dimension K
 #define WPTM 8                 // The work-per-thread in dimension M

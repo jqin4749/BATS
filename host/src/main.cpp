@@ -328,9 +328,6 @@ void run() {
         0, sizeof(offset_list), offset_list, 0, NULL, &write_event[4]);
     checkError(status, "Failed to transfer sampled idx");
 
-    printf("%d\n",offset_list[3]);
-
-
     // Enqueue kernel.
    
     const size_t global[3] = {  PKT_SIZE/WPTM, BATCH_SIZE/WPTN, N_BATCH }; // 128, 1, 1
