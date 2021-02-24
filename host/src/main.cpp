@@ -183,8 +183,7 @@ bool init_opencl()
     status = clSetKernelArg(kernel[i], 5, sizeof(cl_mem), &input_DEOFF_buf[i]);
     checkError(status, "Failed to set argument %d", 5);
 
-    // status = clSetKernelArg(kernel[i], 6, sizeof(cl_mem), &test_off_buf[i]);
-    // checkError(status, "Failed to set argument %d", 6);
+
 
 
     }
@@ -298,7 +297,7 @@ void run() {
   // Launch the problem for each device.
   scoped_array<cl_event> kernel_event(num_devices);
   scoped_array<cl_event> finish_event(num_devices);
-  scoped_array<cl_event> finish_event2(num_devices);
+  
 
   cl_event write_event[5];
   for(unsigned i = 0; i < num_devices; ++i) {

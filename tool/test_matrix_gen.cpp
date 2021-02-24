@@ -83,8 +83,8 @@ int main(){
     n = sprintf(buf,"\n\nstatic uint8_t deg_list[%d] = {",N_BATCH);
     myfile << buf;
     for(int j=0;j<N_BATCH;j++){
-        // int num = rand() % 30;
-        int num = 16;
+        int num = rand() % 30;
+        // int num = 16;
         while(num % TSN != 0 || num ==0){
             num = rand() % 30;
         }

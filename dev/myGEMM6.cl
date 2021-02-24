@@ -70,21 +70,23 @@ void myGEMM6(
     
     // load degrees and calculate offsets    
     my_deg = DEGREE_[batch_id];                                                                                          
-    deg_offset = DEGREE_OFF[batch_id];                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+    deg_offset = DEGREE_OFF[batch_id]; 
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
     // Loop over all tiles
     const int numTiles = my_deg/TSK;
     for(int t=0;t<numTiles;t++){
 
         // Load one tile of A and B into local memory
-        // #pragma unroll
+    
+        #pragma unroll 3
         for (int la=0; la<LPTA; la++) {
             int tid = tidn*RTSM + tidm;
             int id = la*RTSN*RTSM + tid;
             int row = MOD2(id,TSM);
             int col = DIV2(id,TSM);
-            
             int tiledIndex = TSK*t + col;
             int A_vec = address_interpretor(tiledIndex, offsetM + row, deg_offset,sample_idx);
+
             Asub[col][row] = A[A_vec];
             Bsub[row][col]= B[tiledIndex*BATCH_SIZE + offsetN + row + deg_offset*BATCH_SIZE];
         }
@@ -93,7 +95,7 @@ void myGEMM6(
         barrier(CLK_LOCAL_MEM_FENCE);
 
         // Loop over the values of a single tile
-        // #pragma unroll
+        // #pragma unroll 2
         for (int k=0; k<TSK; k++) {
             // Cache the values of Bsub in registers
             #pragma unroll
@@ -120,15 +122,12 @@ void myGEMM6(
     }
 
     // Store the final results in C
-    // #pragma unroll
+    // #pragma unroll 2
     for (int wm=0; wm<WPTM; wm++) {
         int globalRow = offsetM + tidm + wm*RTSM;
         #pragma unroll
         for (int wn=0; wn<WPTN; wn++) {
             int globalCol = offsetN + tidn + wn*RTSN; 
-            // if(get_group_id(0)==0 && get_group_id(1)==0){
-            //     printf("(%d,%d):%d\n",get_local_id(0),get_local_id(1),globalCol*PKT_SIZE + globalRow + batch_id*PKT_SIZE*BATCH_SIZE);
-            // }
             C[globalCol*PKT_SIZE + globalRow + batch_id*PKT_SIZE*BATCH_SIZE] = acc[wm][wn];
         }
     }
