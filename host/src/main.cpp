@@ -1,9 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
+
 #include "CL/opencl.h"
 #include "AOCLUtils/aocl_utils.h"
-
 #include "config.h"
 #include "test_matrix.h"
 using namespace aocl_utils;
@@ -11,23 +10,21 @@ using namespace aocl_utils;
 // OpenCL runtime configuration
 cl_platform_id platform = NULL;
 unsigned num_devices = 0;
-cl_device_id device;; // num_devices elements
+cl_device_id device; 
 cl_context context = NULL;
-cl_command_queue queue; // num_devices elements
+cl_command_queue queue; 
 cl_program program = NULL;
-cl_kernel kernel; // num_devices elements
+cl_kernel kernel; 
 
-cl_mem input_a_buf; // num_devices elements
-cl_mem input_b_buf; // num_devices elements
-cl_mem input_DE_buf; // num_devices elements
-cl_mem output_buf; // num_devices elements
-cl_mem input_sample_buf; // num_devices elements
-cl_mem input_DEOFF_buf; // num_devices elements
-
-
-// scoped_array<scoped_aligned_ptr<uint8_t> > input_a, input_b, input_deg, input_sample_idx, test_out; // num_devices elements
-scoped_aligned_ptr<uint8_t>  output; // num_devices elements
-scoped_array<uint8_t>  ref_output; // num_devices elements
+cl_mem input_a_buf; 
+cl_mem input_b_buf; 
+cl_mem input_DE_buf; 
+cl_mem output_buf; 
+cl_mem input_sample_buf; 
+cl_mem input_DEOFF_buf; 
+ 
+uint8_t*  output; 
+scoped_array<uint8_t>  ref_output; 
 
 // Function prototypes
 bool init_opencl();
@@ -105,7 +102,7 @@ bool init_opencl()
   checkError(status, "Failed to create command queue");
 
   // Kernel.
-  const char *kernel_name = "myGEMM6";
+  const char *kernel_name = "encoder";
   kernel = clCreateKernel(program, kernel_name, &status);
   checkError(status, "Failed to create kernel");
 
@@ -162,6 +159,8 @@ bool init_opencl()
 
 // Initialize the data for the problem. Requires num_devices to be known.
 void init_problem() {
+  printf("jere\n");
+
   if(num_devices == 0) {
     checkError(-1, "No devices");
   }
@@ -172,7 +171,7 @@ void init_problem() {
   output = (uint8_t*) malloc(PKT_SIZE*BATCH_SIZE*N_BATCH);
   ref_output = (uint8_t*) malloc(PKT_SIZE*BATCH_SIZE*N_BATCH);
 
-    printf("computing golden ref\n");
+  printf("computing golden ref\n");
   
   // construct naive matrix A (PKT_SIZE,DEGREE,N_BATCH)s
   int golden_A[MAX_DEGREE*MAX_NUM_BATCH*PKT_SIZE]; // MAX_DEGREE is too large

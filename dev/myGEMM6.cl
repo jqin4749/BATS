@@ -31,7 +31,7 @@ int address_interpretor(int x, int y, int offset, __global const uint8_t* restri
 __kernel 
 __attribute__((num_compute_units(CMP_UNIT)))
 __attribute__((reqd_work_group_size(TSM/WPTM, TSN/WPTN, 1)))  // 8, 1, 1
-void myGEMM6(
+void encoder(
             __global const uint8_t* restrict A,
             __global const uint8_t* restrict B,
             __global uint8_t* restrict C,
@@ -78,7 +78,7 @@ void myGEMM6(
 
         // Load one tile of A and B into local memory
     
-        #pragma unroll 3
+        #pragma unroll 4
         for (int la=0; la<LPTA; la++) {
             int tid = tidn*RTSM + tidm;
             int id = la*RTSN*RTSM + tid;
