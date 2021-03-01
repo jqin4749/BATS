@@ -1,11 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <cstdlib>
 #include "CL/opencl.h"
 #include "AOCLUtils/aocl_utils.h"
 #include "config.h"
 #include "test_matrix.h"
 using namespace aocl_utils;
+// using namespace std;
 
 // OpenCL runtime configuration
 cl_platform_id platform = NULL;
@@ -30,7 +31,7 @@ scoped_array<uint8_t>  ref_output;
 bool init_opencl();
 void init_problem();
 void run();
-void cleanup();
+// void cleanup();
 
 template<int N_BATCH_>
 int get_B_size(uint8_t deg_list[N_BATCH_],int n_batch){
@@ -106,6 +107,7 @@ bool init_opencl()
   kernel = clCreateKernel(program, kernel_name, &status);
   checkError(status, "Failed to create kernel");
 
+  // alinged_buf = aligned_alloc(64,FILE_SIZE);
   // Input buffers.
   input_a_buf = clCreateBuffer(context, CL_MEM_READ_ONLY,
   FILE_SIZE * sizeof(uint8_t), NULL, &status);
@@ -159,8 +161,6 @@ bool init_opencl()
 
 // Initialize the data for the problem. Requires num_devices to be known.
 void init_problem() {
-  printf("jere\n");
-
   if(num_devices == 0) {
     checkError(-1, "No devices");
   }
@@ -175,7 +175,6 @@ void init_problem() {
   
   // construct naive matrix A (PKT_SIZE,DEGREE,N_BATCH)s
   int golden_A[MAX_DEGREE*MAX_NUM_BATCH*PKT_SIZE]; // MAX_DEGREE is too large
-
   int count = 0;
   for(int idx=0;idx<N_BATCH;idx++){
     int cur_deg =deg_list[idx];
@@ -189,7 +188,10 @@ void init_problem() {
     }
   }
   int b_size = get_B_size<N_BATCH>(deg_list,N_BATCH);
+  
+
   uint8_t* B_trans = (uint8_t*)malloc(b_size);
+
   count = 0;
   for(int b=0;b<N_BATCH;b++){
     int d = deg_list[b];
@@ -226,7 +228,11 @@ void init_problem() {
 void run() {
   printf("running\n");
   cl_int status;
- 
+  
+  // uint8_t* mappedBuffer = (uint8_t*)clEnqueueMapBuffer(queue, input_a_buf, CL_FALSE, CL_MAP_WRITE, 0, FILE_SIZE, 0, NULL, NULL, NULL);
+  // memcpy(mappedBuffer,input_file,FILE_SIZE);
+  // clEnqueueUnmapMemObject(queue, input_a_buf, mappedBuffer, 0, NULL, NULL);
+
   const double start_time = getCurrentTimestamp();
 
   // Launch the problem for each device.
@@ -258,7 +264,7 @@ void run() {
 
   status = clEnqueueWriteBuffer(queue, input_DEOFF_buf, CL_FALSE,
       0, sizeof(offset_list), offset_list, 0, NULL, &write_event[4]);
-  checkError(status, "Failed to transfer sampled idx");
+  checkError(status, "Failed to transfer offset");
 
   // Enqueue kernel.
   
@@ -361,6 +367,7 @@ void cleanup() {
   if(context) {
     clReleaseContext(context);
   }
+  // free(alinged_buf);
 }
 
 

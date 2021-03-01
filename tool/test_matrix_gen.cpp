@@ -28,7 +28,7 @@ int get_B_size(uint8_t deg_list[N_BATCH_],int n_batch){
     int len = 0;
     for(int i=0;i<n_batch;i++){
         len+=deg_list[i];
-    }    
+    }
     return len*BATCH_SIZE;
 }
 
@@ -37,7 +37,7 @@ int get_A_size(uint8_t deg_list[N_BATCH_],int n_batch){
     int len = 0;
     for(int i=0;i<n_batch;i++){
         len+=deg_list[i];
-    }    
+    }
     return len*PKT_SIZE;
 }
 
@@ -46,7 +46,7 @@ int get_sampleIdx_size(uint8_t deg_list[N_BATCH_],int n_batch){
     int len = 0;
     for(int i=0;i<n_batch;i++){
         len+=deg_list[i];
-    }    
+    }
     return len;
 }
 
@@ -77,13 +77,13 @@ int main(){
         myfile << "\n\t\t";
     }
     myfile << "\n\t}; // FILE_SIZE\n";
-    
+
     // degree
     uint8_t deg_list[N_BATCH];
     n = sprintf(buf,"\n\nstatic uint8_t deg_list[%d] = {",N_BATCH);
     myfile << buf;
     for(int j=0;j<N_BATCH;j++){
-        int num = rand() % 30;
+        int num = rand() % MAX_DEGREE;
         // int num = 16;
         while(num % TSN != 0 || num ==0){
             num = rand() % 30;
@@ -123,7 +123,7 @@ int main(){
                 num = rand() % PKT_NUM;
             }
             sample_idx[count] = num;
-            
+
             n = sprintf(buf,"%d,",num);
             myfile << buf;
             count++;
@@ -132,7 +132,7 @@ int main(){
     }
     myfile << "}; // DEGREE*N_BATCH\n";
 
-   
+
     // B (DEGREE,BATCH_SIZE)
     uint8_t B[MAX_DEGREE*BATCH_SIZE];
     count = 0;
@@ -165,8 +165,8 @@ int main(){
     //     myfile << "},";
     // }
     // myfile << "\n\t};\n";
-    
-   
+
+
 
 
     // // multiply them
@@ -190,7 +190,7 @@ int main(){
     // }
     // myfile << "\n\t};\n";
 
-    
+
 
 
     myfile.close();
@@ -203,14 +203,14 @@ int main(){
 #include "test_matrix.h"
 
 int address_interpretor(int x, int y, int offset,  const uint8_t* sample_idx){
-    // use x to find index of required packet (file space) in sample_idx    
+    // use x to find index of required packet (file space) in sample_idx
     uint8_t file_pkt_idx = sample_idx[offset+x];
     // calculate idx of required data in file space
     return file_pkt_idx*PKT_SIZE + y;
 }
 
 int main(){
-  
+
     int offset_list[N_BATCH]={0};
     for(int j=0;j<N_BATCH;j++){
       for(int jj=0;jj<j;jj++){
@@ -234,7 +234,7 @@ int main(){
         }
       }
     }
- 
+
     // compute golden A * matrix B
     for(int b=0;b<N_BATCH;b++){
       int d = deg_list[b];
@@ -274,7 +274,7 @@ int main(){
             break;
         }
     }
-    
+
     for(int i=0;i<10;i++){
         printf("%d\n",ref_output_2[i]);
     }

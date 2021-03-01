@@ -2,10 +2,12 @@
 #define PKT_SIZE 1024 // pkt size M
 #define PKT_NUM 64
 #define BATCH_SIZE 4 // batch size N
-#define MAX_DEGREE 30 // K   MAX
+#define MAX_DEGREE 20 // K   MAX
 #define N_BATCH 20
 #define MAX_NUM_BATCH N_BATCH // used only at buffer creation
 #define FILE_SIZE PKT_SIZE*PKT_NUM
+
+#define PKT_WITH_COEFF (BATCH_SIZE+PKT_SIZE)
 
 #ifndef GCC
 #define uint16_t unsigned short
@@ -13,10 +15,10 @@
 #endif
 
 #define TSM 128                // The tile-size in dimension M
-#define TSN 4                // The tile-size in dimension N
+#define TSN BATCH_SIZE                // The tile-size in dimension N
 #define TSK 4                 // The tile-size in dimension K
 #define WPTM 8                 // The work-per-thread in dimension M
-#define WPTN 4                 // The work-per-thread in dimension N
+#define WPTN BATCH_SIZE                 // The work-per-thread in dimension N
 #define RTSM (TSM/WPTM)        // The reduced tile-size in dimension M 16
 #define RTSN (TSN/WPTN)        // The reduced tile-size in dimension N
 #define LPTA ((TSK*TSM)/(RTSM*RTSN)) // Loads-per-thread for A 32
