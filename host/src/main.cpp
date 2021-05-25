@@ -1,31 +1,32 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <cstdlib>
+// #include <cstdlib>
 #include "CL/opencl.h"
 #include "AOCLUtils/aocl_utils.h"
 #include "config.h"
 #include "test_matrix.h"
+#include <malloc.h>
 using namespace aocl_utils;
 // using namespace std;
 
 // OpenCL runtime configuration
 cl_platform_id platform = NULL;
 unsigned num_devices = 0;
-cl_device_id device; 
+cl_device_id device;
 cl_context context = NULL;
-cl_command_queue queue; 
+cl_command_queue queue;
 cl_program program = NULL;
-cl_kernel kernel; 
+cl_kernel kernel;
 
-cl_mem input_a_buf; 
-cl_mem input_b_buf; 
-cl_mem input_DE_buf; 
-cl_mem output_buf; 
-cl_mem input_sample_buf; 
-cl_mem input_DEOFF_buf; 
- 
-uint8_t*  output; 
-scoped_array<uint8_t>  ref_output; 
+cl_mem input_a_buf;
+cl_mem input_b_buf;
+cl_mem input_DE_buf;
+cl_mem output_buf;
+cl_mem input_sample_buf;
+cl_mem input_DEOFF_buf;
+uint8_t recoder_enable = 0;
+uint8_t*  output;
+scoped_array<uint8_t>  ref_output;
 
 // Function prototypes
 bool init_opencl();
@@ -38,7 +39,7 @@ int get_B_size(uint8_t deg_list[N_BATCH_],int n_batch){
     int len = 0;
     for(int i=0;i<n_batch;i++){
         len+=deg_list[i];
-    }    
+    }
     return len*BATCH_SIZE;
 }
 
@@ -97,7 +98,7 @@ bool init_opencl()
   checkError(status, "Failed to build program");
 
 
- 
+
   // Command queue.
   queue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, &status);
   checkError(status, "Failed to create command queue");
@@ -107,7 +108,8 @@ bool init_opencl()
   kernel = clCreateKernel(program, kernel_name, &status);
   checkError(status, "Failed to create kernel");
 
-  // alinged_buf = aligned_alloc(64,FILE_SIZE);
+  // alinged_buf = memalign(4096,FILE_SIZE);
+  // alinged_buf = aligned_alloc(4096,FILE_SIZE);
   // Input buffers.
   input_a_buf = clCreateBuffer(context, CL_MEM_READ_ONLY,
   FILE_SIZE * sizeof(uint8_t), NULL, &status);
@@ -120,17 +122,17 @@ bool init_opencl()
   input_DE_buf = clCreateBuffer(context, CL_MEM_READ_ONLY,
   MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
   checkError(status, "Failed to create buffer for input DE");
-  
+
 
   input_sample_buf = clCreateBuffer(context, CL_MEM_READ_ONLY,
-  MAX_DEGREE*MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
+  MAX_DEGREE*MAX_NUM_BATCH * sizeof(int), NULL, &status);
   checkError(status, "Failed to create buffer for input sample idx");
   // Output buffer.
 
   output_buf = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
-  PKT_SIZE*BATCH_SIZE* MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
+  PKT_WITH_COEFF*BATCH_SIZE* MAX_NUM_BATCH * sizeof(uint8_t), NULL, &status);
   checkError(status, "Failed to create buffer for output");
-  
+
   input_DEOFF_buf = clCreateBuffer(context, CL_MEM_READ_ONLY,
   MAX_NUM_BATCH * sizeof(int), NULL, &status);
   checkError(status, "Failed to create buffer for input DE");
@@ -154,7 +156,10 @@ bool init_opencl()
 
   status = clSetKernelArg(kernel, 5, sizeof(cl_mem), &input_DEOFF_buf);
   checkError(status, "Failed to set argument %d", 5);
-  
+
+  status = clSetKernelArg(kernel, 6, sizeof(uint8_t), &recoder_enable);
+  checkError(status, "Failed to set argument %d", 6);
+
   printf("Finished Initialization\n");
   return true;
 }
@@ -164,15 +169,15 @@ void init_problem() {
   if(num_devices == 0) {
     checkError(-1, "No devices");
   }
-  
+
   printf("starting init problem\n");
 
 
-  output = (uint8_t*) malloc(PKT_SIZE*BATCH_SIZE*N_BATCH);
+  output = (uint8_t*) malloc(PKT_WITH_COEFF*BATCH_SIZE*N_BATCH);
   ref_output = (uint8_t*) malloc(PKT_SIZE*BATCH_SIZE*N_BATCH);
 
   printf("computing golden ref\n");
-  
+
   // construct naive matrix A (PKT_SIZE,DEGREE,N_BATCH)s
   int golden_A[MAX_DEGREE*MAX_NUM_BATCH*PKT_SIZE]; // MAX_DEGREE is too large
   int count = 0;
@@ -182,13 +187,18 @@ void init_problem() {
     for(int dd=0;dd<cur_deg;dd++){
       int cur_sample_idx = sample_idx[cur_offset+dd];
       for(int pk=0;pk<PKT_SIZE;pk++){
-        golden_A[count] = input_file[pk+cur_sample_idx*PKT_SIZE];
+        if(cur_sample_idx == PADDING_ID){
+          golden_A[count] = 0;
+        }
+        else{
+          golden_A[count] = input_file[pk+cur_sample_idx*PKT_SIZE];
+        }
         count++;
       }
     }
   }
   int b_size = get_B_size<N_BATCH>(deg_list,N_BATCH);
-  
+
 
   uint8_t* B_trans = (uint8_t*)malloc(b_size);
 
@@ -202,7 +212,7 @@ void init_problem() {
       }
     }
   }
-  
+
   // compute golden A * matrix B
   for(int b=0;b<N_BATCH;b++){
     int d = deg_list[b];
@@ -220,7 +230,7 @@ void init_problem() {
   free(B_trans);
 
   printf("finished init problem\n");
-  
+
 }
 
 
@@ -228,61 +238,80 @@ void init_problem() {
 void run() {
   printf("running\n");
   cl_int status;
-  
-  // uint8_t* mappedBuffer = (uint8_t*)clEnqueueMapBuffer(queue, input_a_buf, CL_FALSE, CL_MAP_WRITE, 0, FILE_SIZE, 0, NULL, NULL, NULL);
-  // memcpy(mappedBuffer,input_file,FILE_SIZE);
-  // clEnqueueUnmapMemObject(queue, input_a_buf, mappedBuffer, 0, NULL, NULL);
+
+  uint8_t* mappedBuffer_a = (uint8_t*)clEnqueueMapBuffer(queue, input_a_buf, CL_FALSE, CL_MAP_WRITE, 0, FILE_SIZE, 0, NULL, NULL, NULL);
+  memcpy(mappedBuffer_a,input_file,FILE_SIZE);
+  clEnqueueUnmapMemObject(queue, input_a_buf, mappedBuffer_a, 0, NULL, NULL);
+
+  uint8_t* mappedBuffer_b = (uint8_t*)clEnqueueMapBuffer(queue, input_b_buf, CL_FALSE, CL_MAP_WRITE, 0, sizeof(B), 0, NULL, NULL, NULL);
+  memcpy(mappedBuffer_b,B,sizeof(B));
+  clEnqueueUnmapMemObject(queue, input_b_buf, mappedBuffer_b, 0, NULL, NULL);
+
+  uint8_t* mappedBuffer_de = (uint8_t*)clEnqueueMapBuffer(queue, input_DE_buf, CL_FALSE, CL_MAP_WRITE, 0, sizeof(deg_list), 0, NULL, NULL, NULL);
+  memcpy(mappedBuffer_de,deg_list,sizeof(deg_list));
+  clEnqueueUnmapMemObject(queue, input_DE_buf, mappedBuffer_de, 0, NULL, NULL);
+
+  int* mappedBuffer_sample = (int*)clEnqueueMapBuffer(queue, input_sample_buf, CL_FALSE, CL_MAP_WRITE, 0, sizeof(sample_idx), 0, NULL, NULL, NULL);
+  memcpy(mappedBuffer_sample,sample_idx,sizeof(sample_idx));
+  clEnqueueUnmapMemObject(queue, input_sample_buf, mappedBuffer_sample, 0, NULL, NULL);
+
+  int* mappedBuffer_off = (int*)clEnqueueMapBuffer(queue, input_DEOFF_buf, CL_FALSE, CL_MAP_WRITE, 0, sizeof(offset_list), 0, NULL, NULL, NULL);
+  memcpy(mappedBuffer_off,offset_list,sizeof(offset_list));
+  clEnqueueUnmapMemObject(queue, input_DEOFF_buf, mappedBuffer_off, 0, NULL, NULL);
 
   const double start_time = getCurrentTimestamp();
 
   // Launch the problem for each device.
   cl_event kernel_event;
   cl_event finish_event;
-  
 
-  cl_event write_event[5];
+
+  // cl_event write_event[4];
 
 
   // clEnqueueWriteBuffer here is already aligned to ensure that DMA is used
   // for the host-to-device transfer.
-  
-  status = clEnqueueWriteBuffer(queue, input_a_buf, CL_FALSE,
-      0, FILE_SIZE * sizeof(uint8_t), input_file, 0, NULL, &write_event[0]);
-  checkError(status, "Failed to transfer input A");
 
-  status = clEnqueueWriteBuffer(queue, input_b_buf, CL_FALSE,
-      0, sizeof(B) , B, 0, NULL, &write_event[1]);
-  checkError(status, "Failed to transfer input B");
+  // status = clEnqueueWriteBuffer(queue, input_a_buf, CL_FALSE,
+  //     0, FILE_SIZE * sizeof(uint8_t), input_file, 0, NULL, &write_event[0]);
+  // checkError(status, "Failed to transfer input A");
 
-  status = clEnqueueWriteBuffer(queue, input_DE_buf, CL_FALSE,
-      0, sizeof(deg_list), deg_list, 0, NULL, &write_event[2]);
-  checkError(status, "Failed to transfer input DE");
+  // status = clEnqueueWriteBuffer(queue, input_b_buf, CL_FALSE,
+  //     0, sizeof(B) , B, 0, NULL, &write_event[0]);
+  // checkError(status, "Failed to transfer input B");
 
-  status = clEnqueueWriteBuffer(queue, input_sample_buf, CL_FALSE,
-      0, sizeof(sample_idx), sample_idx, 0, NULL, &write_event[3]);
-  checkError(status, "Failed to transfer sampled idx");
+  // status = clEnqueueWriteBuffer(queue, input_DE_buf, CL_FALSE,
+  //     0, sizeof(deg_list), deg_list, 0, NULL, &write_event[1]);
+  // checkError(status, "Failed to transfer input DE");
 
-  status = clEnqueueWriteBuffer(queue, input_DEOFF_buf, CL_FALSE,
-      0, sizeof(offset_list), offset_list, 0, NULL, &write_event[4]);
-  checkError(status, "Failed to transfer offset");
+  // status = clEnqueueWriteBuffer(queue, input_sample_buf, CL_FALSE,
+  //     0, sizeof(sample_idx), sample_idx, 0, NULL, &write_event[2]);
+  // checkError(status, "Failed to transfer sampled idx");
+
+  // status = clEnqueueWriteBuffer(queue, input_DEOFF_buf, CL_FALSE,
+  //     0, sizeof(offset_list), offset_list, 0, NULL, &write_event[3]);
+  // checkError(status, "Failed to transfer offset");
 
   // Enqueue kernel.
-  
+
   const size_t global[3] = {  PKT_SIZE/WPTM, BATCH_SIZE/WPTN, N_BATCH }; // 128, 1, 1
   const size_t local[3] = { TSM/WPTM, TSN/WPTN, 1 };
 
   status = clEnqueueNDRangeKernel(queue, kernel, 3, NULL,
-      global, local, 5, write_event, &kernel_event);
+      global, local,0, NULL, &kernel_event);
   checkError(status, "Failed to launch kernel");
 
   // Read the result. This the final operation.
-  status = clEnqueueReadBuffer(queue, output_buf, CL_FALSE,
-      0, PKT_SIZE*BATCH_SIZE*N_BATCH*sizeof(uint8_t), output, 1, &kernel_event, &finish_event);
-  checkError(status, "Failed to read");
-  
+  // status = clEnqueueReadBuffer(queue, output_buf, CL_FALSE,
+  //     0, PKT_WITH_COEFF*BATCH_SIZE*N_BATCH*sizeof(uint8_t), output, 1, &kernel_event, &finish_event);
+  // checkError(status, "Failed to read");
 
   // Wait for all devices to finish.
-  clWaitForEvents(num_devices, &finish_event);
+  clWaitForEvents(num_devices, &kernel_event);
+
+  output = (uint8_t*)clEnqueueMapBuffer(queue, output_buf, CL_FALSE, CL_MAP_READ, 0, PKT_WITH_COEFF*BATCH_SIZE*N_BATCH*sizeof(uint8_t), 0, NULL, NULL, NULL);
+  // memcpy(output,mappedBuffer_res,PKT_WITH_COEFF*BATCH_SIZE*N_BATCH*sizeof(uint8_t));
+  // clEnqueueUnmapMemObject(queue, output_buf, mappedBuffer_res, 0, NULL, NULL);
 
   const double end_time = getCurrentTimestamp();
 
@@ -290,52 +319,71 @@ void run() {
   printf("\nTime: %0.3f ms\n", (end_time - start_time) * 1e3);
 
   // Get kernel times using the OpenCL event profiling API.
-  
+
   cl_ulong time_ns = getStartEndTime(kernel_event);
   printf("Kernel time: %0.3f ms\n", double(time_ns) * 1e-6);
 
-  time_ns = getStartEndTime(write_event[0]);
-  printf("Write 1: %0.3f ms\n", double(time_ns) * 1e-6);
-  time_ns = getStartEndTime(write_event[1]);
-  printf("Write 2: %0.3f ms\n",double(time_ns) * 1e-6);
-  time_ns = getStartEndTime(write_event[2]);
-  printf("Write 3: %0.3f ms\n", double(time_ns) * 1e-6);
-  time_ns = getStartEndTime(write_event[3]);
-  printf("Write 4: %0.3f ms\n", double(time_ns) * 1e-6);
-  time_ns = getStartEndTime(write_event[4]);
-  printf("Write 5: %0.3f ms\n", double(time_ns) * 1e-6);
-  time_ns = getStartEndTime(finish_event);
-  printf("Read: %0.3f ms\n",  double(time_ns) * 1e-6);
+  // time_ns = getStartEndTime(write_event[0]);
+  // printf("Write 1: %0.3f ms\n", double(time_ns) * 1e-6);
+  // time_ns = getStartEndTime(write_event[1]);
+  // printf("Write 2: %0.3f ms\n",double(time_ns) * 1e-6);
+  // time_ns = getStartEndTime(write_event[2]);
+  // printf("Write 3: %0.3f ms\n", double(time_ns) * 1e-6);
+  // time_ns = getStartEndTime(write_event[3]);
+  // printf("Write 4: %0.3f ms\n", double(time_ns) * 1e-6);
+  // time_ns = getStartEndTime(write_event[4]);
+  // printf("Write 5: %0.3f ms\n", double(time_ns) * 1e-6);
+  // time_ns = getStartEndTime(finish_event);
+  // printf("Read: %0.3f ms\n",  double(time_ns) * 1e-6);
 
 
-  clReleaseEvent(write_event[0]);
-  clReleaseEvent(write_event[1]);
-  clReleaseEvent(write_event[2]);
-  clReleaseEvent(write_event[3]);
-  clReleaseEvent(write_event[4]);
+  // clReleaseEvent(write_event[0]);
+  // clReleaseEvent(write_event[1]);
+  // clReleaseEvent(write_event[2]);
+  // clReleaseEvent(write_event[3]);
+  // clReleaseEvent(write_event[4]);
   // Release all events.
 
   clReleaseEvent(kernel_event);
-  clReleaseEvent(finish_event);
+  // clReleaseEvent(finish_event);
 
 
   // Verify results.
   bool pass = true;
-  for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH && pass; ++j) {
-    // printf("%d,%d\n",output[i][j],ref_output[i][j]);
-    if(output[j] != ref_output[j] ) {
-      printf("Failed verification, index %d\nOutput: %d\nReference: %d\n",
-           j, output[j], ref_output[j]);
-      pass = false;
+  int count=0;
+  int count_=0;
+  for(int b=0;b<N_BATCH;b++){
+    for(int i=0;i<BATCH_SIZE;i++){
+      for(int j=0;j<PKT_WITH_COEFF && pass;j++){
+        if(j>=COEFF_SIZE){
+          if(output[count] != ref_output[count_] ) {
+            printf("Failed verification, index %d\nOutput: %d\nReference: %d\n",
+                count, output[count], ref_output[count_]);
+            pass = false;
+          }
+          count_++;
+        }
+        count++;
+      }
     }
-    
   }
-  
+  // for(unsigned j = 0; j < PKT_SIZE*BATCH_SIZE*N_BATCH && pass; ++j) {
+  //   // printf("%d,%d\n",output[i][j],ref_output[i][j]);
+  //   if(output[j] != ref_output[j] ) {
+  //     printf("Failed verification, index %d\nOutput: %d\nReference: %d\n",
+  //          j, output[j], ref_output[j]);
+  //     pass = false;
+  //   }
+
+  // }
+
   printf("\nVerification: %s\n", pass ? "PASS" : "FAIL");
+  clEnqueueUnmapMemObject(queue, output_buf, output, 0, NULL, NULL);
+
 }
 
 void cleanup() {
-  
+
   if(kernel) {
     clReleaseKernel(kernel);
   }
@@ -386,11 +434,10 @@ int main(int argc, char **argv) {
   for(int i=0;i<5;i++){
     run();
   }
-  
+
 
   // Free the resources allocated
   cleanup();
 
   return 0;
 }
-

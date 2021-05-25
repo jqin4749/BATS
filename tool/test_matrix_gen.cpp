@@ -14,8 +14,11 @@
 
 using namespace std;
 
-bool check_exit(uint8_t sample_idx[N_BATCH*MAX_DEGREE],int count, int offset, uint8_t num){
+bool check_exit(int sample_idx[N_BATCH*MAX_DEGREE],int count, int offset, uint8_t num){
     for(int i=offset;i<count+1;i++){
+        if(sample_idx[i]==-1){
+            continue;
+        }
         if(sample_idx[i] == num){
             return true;
         }
@@ -50,6 +53,12 @@ int get_sampleIdx_size(uint8_t deg_list[N_BATCH_],int n_batch){
     return len;
 }
 
+uint8_t round_up_to_4(uint8_t a){
+    if(a%4 == 0){
+        return a;
+    }
+    return a + 4 - a%4;
+}
 
 #ifndef TEST_ONLY
 int main(){
@@ -79,27 +88,31 @@ int main(){
     myfile << "\n\t}; // FILE_SIZE\n";
 
     // degree
-    uint8_t deg_list[N_BATCH];
     n = sprintf(buf,"\n\nstatic uint8_t deg_list[%d] = {",N_BATCH);
     myfile << buf;
+    uint8_t deg_list[N_BATCH];
+    uint8_t deg_list_padded[N_BATCH];
     for(int j=0;j<N_BATCH;j++){
-        int num = rand() % MAX_DEGREE;
+        uint8_t num = rand() % (MAX_DEGREE+1);
         // int num = 16;
-        while(num % TSN != 0 || num ==0){
-            num = rand() % 30;
+        while(num == 0){
+            num = rand() % (MAX_DEGREE+1);
         }
-        n = sprintf(buf,"%d,",num);
-        myfile << buf;
+        uint8_t num_padded = round_up_to_4(num);
         deg_list[j] = num;
+        deg_list_padded[j] = num_padded; 
+        n = sprintf(buf,"%d,",num_padded);
+        myfile << buf;
     }
     myfile << "}; // N_BATCH\n";
 
+    // offset
     n = sprintf(buf,"\n\nstatic int offset_list[%d] = {",N_BATCH);
     myfile << buf;
     int offset_list[N_BATCH]={0};
     for(int j=0;j<N_BATCH;j++){
       for(int jj=0;jj<j;jj++){
-        offset_list[j] += deg_list[jj];
+        offset_list[j] += deg_list_padded[jj];
       }
     }
     for(int i=0;i<N_BATCH;i++){
@@ -108,14 +121,14 @@ int main(){
     }
     myfile << "}; // N_BATCH\n";
 
-    // generate sample idx
-    uint8_t sample_idx[N_BATCH*MAX_DEGREE]={0};
-
-    n = sprintf(buf,"\n\nstatic uint8_t sample_idx[%d] = {\n\t\t",get_sampleIdx_size<N_BATCH>(deg_list,N_BATCH));
+    // sample idx
+    n = sprintf(buf,"\n\nstatic int sample_idx[%d] = {\n\t\t",get_sampleIdx_size<N_BATCH>(deg_list_padded,N_BATCH));
     myfile << buf;
+    int sample_idx[N_BATCH*MAX_DEGREE]={0};
     int count=0;
     for(int j=0;j<N_BATCH;j++){
         uint8_t cur_deg = deg_list[j];
+        uint8_t cur_deg_padded = deg_list_padded[j];
         int cur_offset = offset_list[j];
         for(int d=0;d<cur_deg;d++){
             uint8_t num = rand() % PKT_NUM;
@@ -123,24 +136,29 @@ int main(){
                 num = rand() % PKT_NUM;
             }
             sample_idx[count] = num;
-
             n = sprintf(buf,"%d,",num);
             myfile << buf;
             count++;
         }
+        for(int i=0;i<cur_deg_padded-cur_deg;i++){
+            n = sprintf(buf,"%d,",-1);
+            myfile << buf;
+        }
         myfile << "\n\t\t";
     }
     myfile << "}; // DEGREE*N_BATCH\n";
+
+    
 
 
     // B (DEGREE,BATCH_SIZE)
     uint8_t B[MAX_DEGREE*BATCH_SIZE];
     count = 0;
     srand(SEED);
-    n = sprintf(buf,"\n\nstatic uint8_t B[%d] = {\n\t\t",get_B_size<N_BATCH>(deg_list,N_BATCH));
+    n = sprintf(buf,"\n\nstatic uint8_t B[%d] = {\n\t\t",get_B_size<N_BATCH>(deg_list_padded,N_BATCH));
     myfile << buf;
     for(int j=0;j<N_BATCH;j++){
-        uint8_t cur_deg = deg_list[j];
+        uint8_t cur_deg = deg_list_padded[j];
         for(int d=0;d<cur_deg;d++){
             for(int b=0;b<BATCH_SIZE;b++){
                 int num = rand() % 256;

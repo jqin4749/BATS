@@ -1,4 +1,5 @@
 
+// matrix parameters
 #define PKT_SIZE 1024 // pkt size M
 #define PKT_NUM 64
 #define BATCH_SIZE 4 // batch size N
@@ -7,13 +8,22 @@
 #define MAX_NUM_BATCH N_BATCH // used only at buffer creation
 #define FILE_SIZE PKT_SIZE*PKT_NUM
 
-#define PKT_WITH_COEFF (BATCH_SIZE+PKT_SIZE)
+// BATS parameters
+#define COEFF_SIZE BATCH_SIZE
+#define PKT_WITH_COEFF (COEFF_SIZE+PKT_SIZE)
+
+#ifndef DEBUG
+#define BATS_HEADER 40 // sizeof(struct BatsHeader)
+#else
+#define BATS_HEADER 40 // sizeof(struct BatsHeader)
+#endif
 
 #ifndef GCC
 #define uint16_t unsigned short
 #define uint8_t unsigned char
 #endif
 
+// tiling parameters
 #define TSM 128                // The tile-size in dimension M
 #define TSN BATCH_SIZE                // The tile-size in dimension N
 #define TSK 4                 // The tile-size in dimension K
@@ -23,6 +33,9 @@
 #define RTSN (TSN/WPTN)        // The reduced tile-size in dimension N
 #define LPTA ((TSK*TSM)/(RTSM*RTSN)) // Loads-per-thread for A 32
 #define LPTB ((TSK*TSN)/(RTSM*RTSN)) // Loads-per-thread for B 2
+#define PADDING_ID -1
+
+#define TS_COF 4 // tile size for coeff multiplication
 // const size_t global[3] = {  PKT_SIZE/WPTM, BATCH_SIZE/WPTN, N_BATCH };
 // const size_t local[3] = { TSM/WPTM, TSN/WPTN, 1 };
 #define SIMD_TS 2

@@ -68,18 +68,16 @@ LIBS := rt pthread
 
 # Make it all!
 all : $(TARGET_DIR)/$(TARGET)
-
 # Host executable target.
 $(TARGET_DIR)/$(TARGET) : Makefile $(SRCS) $(INCS) $(TARGET_DIR)
 	$(ECHO)$(CXX) $(CPPFLAGS) $(CXXFLAGS) -std=c++11  -fPIC $(foreach D,$(INC_DIRS),-I$D) \
 			$(AOCL_COMPILE_CONFIG) $(SRCS) $(AOCL_LINK_CONFIG) \
 			$(foreach D,$(LIB_DIRS),-L$D) \
 			$(foreach L,$(LIBS),-l$L) \
-			-o $(TARGET_DIR)/$(TARGET) 
-
+			-o $(TARGET_DIR)/$(TARGET) 	
+	which $(CXX)
 $(TARGET_DIR) :
 	$(ECHO)mkdir $(TARGET_DIR)
-
 FPGA :
 	aoc dev/myGEMM6.cl -o ../bin/myGEMM6 -I include 
 	rm -r ~/sopc_altera*
