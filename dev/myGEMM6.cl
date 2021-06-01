@@ -18,7 +18,7 @@ uint8_t gf_mu_x86(uint8_t a, uint8_t b) {
 }
 
 
-int address_interpretor(int x, int y, int offset, __global const int* restrict sample_idx){
+int address_interpretor(int x, int y, int offset, __global volatile int* restrict sample_idx){
     // use x to find index of required packet (file space) in sample_idx    
     int file_pkt_idx = sample_idx[offset+x];
     if(file_pkt_idx == PADDING_ID){
@@ -30,19 +30,41 @@ int address_interpretor(int x, int y, int offset, __global const int* restrict s
 
 __attribute__((num_simd_work_items(TS_COF)))
 __attribute__((reqd_work_group_size(TS_COF, 1, 1))) 
-__kernel void vec_mul(__global const uint8_t* restrict x, 
-                         __global const uint8_t* restrict y, 
+__kernel void vec_sum(__global volatile uint8_t* restrict x,
+                         __global volatile uint8_t *restrict z){
+    int index = get_global_id(0);
+    z[index] ^= x[index];
+}
+
+__attribute__((num_simd_work_items(TS_COF)))
+__attribute__((reqd_work_group_size(TS_COF, 1, 1))) 
+__kernel void vec_mul(__global volatile uint8_t* restrict x, 
+                         __global volatile uint8_t* restrict y, 
                          __global uint8_t *restrict z)
 {
     // get index of the work item
     int index = get_global_id(0);
-
-    z[index] ^= gf_mu_x86(x[index] , y[index]);
+    z[index] = gf_mu_x86(x[index] , y[index]);
 }
+
+// __attribute__((num_simd_work_items(TS_COF)))
+// __attribute__((reqd_work_group_size(TS_COF, 1, 1))) 
+// __kernel void mat_vec_mul(__global volatile uint8_t* restrict x, 
+//                          __global volatile uint8_t* restrict y, 
+//                          __global uint8_t *restrict z,
+//                          int col){
+
+//     int index = get_global_id(0);
+//     uint8_t res = 0;
+//     for(int i=0;i<col;i++){
+//         res ^= gf_mu_x86(x[index+ PKT_SIZE*i] , y[i]);
+//     }
+//     z[index] = res;
+// }
 
 __kernel
 __attribute__((reqd_work_group_size(TS_COF, TS_COF, 1))) 
-void recoder_cof(__global volatile uint8_t* restrict A, // 1028 by 4 (only calculate 4 by 4)
+void recoder_cof(__global const uint8_t* restrict A, // 1028 by 4 (only calculate 4 by 4)
                     __global volatile uint8_t* restrict B, // 4 by 4
                     __global uint8_t* restrict C){
 
@@ -68,7 +90,7 @@ void recoder_cof(__global volatile uint8_t* restrict A, // 1028 by 4 (only calcu
         const int tiledRow = TS_COF*t + row;
         const int tiledCol = TS_COF*t + col;
         Asub[col][row] = A[tiledCol*PKT_WITH_COEFF + globalRow + batch_id_glb*PKT_WITH_COEFF*BATCH_SIZE];
-        Bsub[row][col] = B[tiledRow*COEFF_SIZE + globalCol + batch_id_glb*COEFF_SIZE*COEFF_SIZE];
+        Bsub[col][row] = B[tiledRow*COEFF_SIZE + globalCol + batch_id_glb*COEFF_SIZE*COEFF_SIZE];
  
         // Synchronise to make sure the tile is loaded
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -76,7 +98,7 @@ void recoder_cof(__global volatile uint8_t* restrict A, // 1028 by 4 (only calcu
         // Perform the computation for a single tile
         #pragma unroll
         for (int k=0; k<TS_COF; k++) {
-            acc ^= gf_mu_x86(Asub[k][row] , Bsub[k][col]) ;
+            acc ^= gf_mu_x86(Asub[k][row] , Bsub[col][k]) ;
         }
  
         // Synchronise before loading the next tile
@@ -99,9 +121,9 @@ void coder(
             __global const uint8_t* restrict B,
             __global uint8_t* restrict C,
             __global volatile uint8_t* restrict DEGREE_,
-            __global const int* restrict sample_idx, // cached
+            __global volatile int* restrict sample_idx, // cached
             __global volatile int* restrict DEGREE_OFF,
-            const uint8_t recoder_enable
+            const uint8_t mode
                       ) {
     // Thread identifiers
     const int tidm = get_local_id(0); // Local row ID (max: TSM/WPTM == RTSM)
@@ -112,7 +134,7 @@ void coder(
 
     // Local memory to fit a tile of A and B
     __local uint8_t Asub[TSK][TSM];
-    __local uint8_t Bsub[TSM][TSK];
+    __local uint8_t Bsub[TSK][TSM];
     int deg_offset; // private
     uint8_t my_deg; // private
     // Allocate register space
@@ -131,7 +153,7 @@ void coder(
     }
     
     // load degrees and calculate offsets
-    if(recoder_enable == 1){
+    if(mode == RECODER_ENABLE){
         my_deg = BATCH_SIZE;
         deg_offset = BATCH_SIZE*batch_id;
     }    
@@ -155,7 +177,7 @@ void coder(
             int col = DIV2(id,TSM);
             int tiledIndex = TSK*t + col;
             int A_vec = 0;
-            if(recoder_enable == 1){
+            if(mode == RECODER_ENABLE){
                 A_vec = COEFF_SIZE + tiledIndex*PKT_WITH_COEFF + offsetM + row + batch_id*PKT_WITH_COEFF*BATCH_SIZE;
             }
             else{
@@ -168,7 +190,7 @@ void coder(
             else{
                 Asub[col][row] = A[A_vec];
             }
-            Bsub[row][col]= B[tiledIndex*BATCH_SIZE + offsetN + row + deg_offset*BATCH_SIZE];
+            Bsub[col][row]= B[tiledIndex*BATCH_SIZE + offsetN + row + deg_offset*BATCH_SIZE];
         }
 
         // Synchronise to make sure the tile is loaded
@@ -181,7 +203,7 @@ void coder(
             #pragma unroll
             for (int wn=0; wn<WPTN; wn++) {
                 int col = tidn + wn*RTSN;
-                Breg[wn] = Bsub[col][k];
+                Breg[wn] = Bsub[k][col];
             }
 
             // Perform the computation
@@ -208,7 +230,8 @@ void coder(
         #pragma unroll
         for (int wn=0; wn<WPTN; wn++) {
             int globalCol = offsetN + tidn + wn*RTSN; 
-            C[BATS_HEADER + COEFF_SIZE + globalCol*(PKT_WITH_COEFF+BATS_HEADER) + globalRow + batch_id*(PKT_WITH_COEFF+BATS_HEADER)*BATCH_SIZE] = acc[wm][wn];
+            C[BATS_HEADER + COEFF_SIZE + globalCol*(PKT_WITH_COEFF+BATS_HEADER) 
+                            + globalRow + batch_id*(PKT_WITH_COEFF+BATS_HEADER)*BATCH_SIZE] = acc[wm][wn];
         }
     }
     

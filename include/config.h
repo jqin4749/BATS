@@ -7,6 +7,8 @@
 #define N_BATCH 20
 #define MAX_NUM_BATCH N_BATCH // used only at buffer creation
 #define FILE_SIZE PKT_SIZE*PKT_NUM
+#define RECODER_ENABLE 1
+#define DECODER_ENABLE 2
 
 // BATS parameters
 #define COEFF_SIZE BATCH_SIZE
