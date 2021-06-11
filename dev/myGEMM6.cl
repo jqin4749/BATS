@@ -18,6 +18,7 @@ uint8_t gf_mu_x86(uint8_t a, uint8_t b) {
 }
 
 
+
 int address_interpretor(int x, int y, int offset, __global volatile int* restrict sample_idx){
     // use x to find index of required packet (file space) in sample_idx    
     int file_pkt_idx = sample_idx[offset+x];
@@ -42,12 +43,15 @@ void recoder_cof(__global volatile uint8_t* restrict A, // 1040 by 16 (only calc
     const int globalCol = TS_COF*get_group_id(1) + col; // Col ID of C (0..N)
     const int batch_id_glb = get_global_id(2);
     // Local memory to fit a tile of TS*TS elements of A and B
+
+    
     __local uint8_t Asub[TS_COF][TS_COF];
+   
     __local uint8_t Bsub[TS_COF][TS_COF];
  
     // Initialise the accumulation register
     uint8_t acc = 0;
-    
+    // test[globalRow] = 1;
     // Loop over all tiles
     const int numTiles = COEFF_SIZE/TS_COF;
     // #pragma unroll 2
@@ -82,8 +86,8 @@ void recoder_cof(__global volatile uint8_t* restrict A, // 1040 by 16 (only calc
 __kernel 
 __attribute__((reqd_work_group_size(TSM/WPTM, TSN/WPTN, 1)))  // 10, 1, 1
 void coder(
-            __global const uint8_t* restrict A,
-            __global const uint8_t* restrict B,
+            __global volatile uint8_t* restrict A,
+            __global volatile uint8_t* restrict B,
             __global uint8_t* restrict C,
             __global volatile uint8_t* restrict common_dim, // multiple of 4
             __global volatile int* restrict sample_idx,
@@ -92,7 +96,7 @@ void coder(
             const uint8_t outer_dim, // multiple of 4
             const uint8_t mode,
             const uint8_t add_to_enable
-
+            // __local  uint8_t* restrict test
                       ) {
     // Thread identifiers
     const int tidm = get_local_id(0); // Local row ID (max: TSM/WPTM == RTSM)
@@ -100,10 +104,10 @@ void coder(
     const int offsetM = TSM*get_group_id(0); // Work-group offset
     const int offsetN = TSN*get_group_id(1); // Work-group offset
     const int batch_id = get_global_id(2); // max: N_BATCH
-
+    // test[offsetM] = 1;
     // Local memory to fit a tile of A and B
-    __local uint8_t Asub[TSK][TSM];
-    __local uint8_t Bsub[TSK][TSM];
+    __local uint8_t Asub[TSM][TSK];
+    __local uint8_t Bsub[TSM][TSK];
     int deg_offset = 0; // private
     uint8_t my_deg = 0; // private
     uint8_t out_dim = 0;
@@ -112,7 +116,7 @@ void coder(
     uint8_t Areg = 0;
     uint8_t Breg[WPTN];
     uint8_t acc[WPTM][WPTN];
-    
+    // test[0] = 1;
 
     // Initialise the accumulation registers
     #pragma unroll
@@ -168,35 +172,33 @@ void coder(
             }
             
             if(A_vec == PADDING_ID){
-                Asub[col][row] = 0;
+                Asub[row][col] = 0;
             }
             else{
-                Asub[col][row] = A[A_vec];
+                Asub[row][col] = A[A_vec];
             }
             
-            Bsub[col][row] = B[B_vec];
-            
+            Bsub[row][col] = B[B_vec];
         }
 
         // Synchronise to make sure the tile is loaded
         barrier(CLK_LOCAL_MEM_FENCE);
 
         // Loop over the values of a single tile
-        #pragma unroll 2
+        #pragma unroll 
         for (int k=0; k<TSK; k++) {
             // Cache the values of Bsub in registers
             #pragma unroll
             for (int wn=0; wn<WPTN; wn++) {
                 int col = tidn + wn*RTSN;
-                Breg[wn] = Bsub[k][col];
+                Breg[wn] = Bsub[col][k]; // this is okay when RTSN == 1
             }
 
             // Perform the computation
             #pragma unroll
             for (int wm=0; wm<WPTM; wm++) {
                 int row = tidm + wm*RTSM;
-
-                Areg = Asub[k][row];
+                Areg = Asub[row][k];
                 #pragma unroll
                 for (int wn=0; wn<WPTN; wn++) {
                     acc[wm][wn] ^= gf_mu_x86(Areg , Breg[wn]);
@@ -209,29 +211,34 @@ void coder(
     }
 
     // Store the final results in C
-    // #pragma unroll 2
+   
+    #pragma unroll 2
     for (int wm=0; wm<WPTM; wm++) {
         int globalRow = offsetM + tidm + wm*RTSM;
         #pragma unroll 
         for (int wn=0; wn<WPTN; wn++) {
             int globalCol = offsetN + tidn + wn*RTSN; 
-            int C_vec = BATS_HEADER + COEFF_SIZE + globalCol*(PKT_WITH_COEFF+BATS_HEADER) 
-                            + globalRow + batch_id*(PKT_WITH_COEFF+BATS_HEADER)*BATCH_SIZE;
+            int C_vec = 0;
             if(mode == DECODER_ENABLE){
                 // C_vec = globalCol*PKT_SIZE + globalRow + batch_id * var_batch_size * PKT_SIZE; 
                 C_vec = address_interpretor(globalCol, globalRow, out_dim_offset,output_sample_idx);
-            }
-            if(C_vec != PADDING_ID){
-                if(add_to_enable){
-                    C[C_vec] ^= acc[wm][wn];
+                if(C_vec != PADDING_ID){
+                    if(add_to_enable){
+                        C[C_vec] ^= acc[wm][wn];
+                    }
+                    else{
+                        C[C_vec] = acc[wm][wn];
+                    }
                 }
-                else{
-                    C[C_vec] = acc[wm][wn];
-                }
             }
+            else{
+                C_vec = BATS_HEADER + COEFF_SIZE + globalCol*(PKT_WITH_COEFF+BATS_HEADER) 
+                            + globalRow + batch_id*(PKT_WITH_COEFF+BATS_HEADER)*BATCH_SIZE;
+                C[C_vec] = acc[wm][wn];
+            }
+            
         }
     }
     
 }
-
 
