@@ -46,3 +46,5 @@
 
 #define MOD2(x,y) ((x) % (y))
 #define DIV2(x,y) ((x) / (y))
+
+#define UNROLL_FACTOR 2

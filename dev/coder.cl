@@ -29,6 +29,57 @@ int address_interpretor(int x, int y, int offset, __global volatile int* restric
     return file_pkt_idx*(PKT_SIZE) + y;
 }
 
+__kernel
+__attribute__((reqd_work_group_size(TS_COF, TS_COF, 1))) 
+void recoder_cof(__global volatile uint8_t* restrict A, // 1040 by 16 (only calculate 16 by 16)
+                    __global volatile uint8_t* restrict B, // 16 by 16
+                    __global uint8_t* restrict C){
+
+     // Thread identifiers
+    const int row = get_local_id(0); // Local row ID (max: TS)
+    const int col = get_local_id(1); // Local col ID (max: TS)
+    const int globalRow = TS_COF*get_group_id(0) + row; // Row ID of C (0..M)
+    const int globalCol = TS_COF*get_group_id(1) + col; // Col ID of C (0..N)
+    const int batch_id_glb = get_global_id(2);
+    // Local memory to fit a tile of TS*TS elements of A and B
+
+    
+    __local uint8_t Asub[TS_COF][TS_COF];
+   
+    __local uint8_t Bsub[TS_COF][TS_COF];
+ 
+    // Initialise the accumulation register
+    uint8_t acc = 0;
+    // test[globalRow] = 1;
+    // Loop over all tiles
+    const int numTiles = COEFF_SIZE/TS_COF;
+    // #pragma unroll 2
+    for (int t=0; t<numTiles; t++) {
+ 
+        // Load one tile of A and B into local memory
+        const int tiledRow = TS_COF*t + row;
+        const int tiledCol = TS_COF*t + col;
+        Asub[col][row] = A[tiledCol*PKT_WITH_COEFF + globalRow + batch_id_glb*PKT_WITH_COEFF*BATCH_SIZE];
+        Bsub[col][row] = B[tiledRow*COEFF_SIZE + globalCol + batch_id_glb*COEFF_SIZE*COEFF_SIZE];
+ 
+        // Synchronise to make sure the tile is loaded
+        barrier(CLK_LOCAL_MEM_FENCE);
+ 
+        // Perform the computation for a single tile
+        #pragma unroll
+        for (int k=0; k<TS_COF; k++) {
+            acc ^= gf_mu_x86(Asub[k][row] , Bsub[col][k]) ;
+        }
+ 
+        // Synchronise before loading the next tile
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+ 
+    // Store the final result in C
+    C[BATS_HEADER+globalCol*(PKT_WITH_COEFF + BATS_HEADER)+ globalRow + batch_id_glb*(PKT_WITH_COEFF + BATS_HEADER)*BATCH_SIZE] = acc;
+    
+}
+
 // Use 2D register blocking (further increase in work per thread)
 __kernel 
 __attribute__((reqd_work_group_size(TSM/WPTM, TSN/WPTN, 1)))  // 10, 1, 1
