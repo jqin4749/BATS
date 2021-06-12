@@ -172,10 +172,10 @@ __kernel void coder( __global volatile uint8_t* restrict A,
                 }
    
                 if(idx == PADDING_ID){
-                    Asub[col_tile][i] = 0;
+                    Asub[col_tile][row_tile] = 0;
                 }
                 else{
-                    Asub[col_tile][i] = A_temp;
+                    Asub[col_tile][row_tile] = A_temp;
                 }
             }
         }
@@ -183,14 +183,14 @@ __kernel void coder( __global volatile uint8_t* restrict A,
         #pragma unroll UNROLL_FACTOR
         #pragma ivdep
         for(int j=0;j<WPTN;j++){
+            int col_tile = j + local_n*WPTN;
+            int col_global = col_tile + global_n*TSN;
             #pragma unroll
             #pragma ivdep
             for(int i=0;i<TSK;i++){
                 int row_tile = i;
-                int col_tile = j + local_n*WPTN;
-                int row_global = row_tile + t*TSK;
-                int col_global = col_tile + global_n*TSN;
-                int B_vec = col_global*out_dim + row_global + deg_offset*out_dim;
+                int row_global = row_tile + t*TSK;                
+                int B_vec = col_global*my_deg + row_global + deg_offset*out_dim;
 
                 Bsub[col_tile][row_tile] = B[B_vec];
             }
@@ -215,7 +215,7 @@ __kernel void coder( __global volatile uint8_t* restrict A,
             #pragma unroll
             for (int wm=0; wm<WPTM; wm++) {
                 int row = wm + local_m*WPTM;
-                Areg = Asub[k][wm];
+                Areg = Asub[k][row];
                 #pragma unroll
                 for (int wn=0; wn<WPTN; wn++) {
                     acc[wm][wn] ^= gf_mu_x86(Areg , Breg[wn]);
@@ -225,6 +225,7 @@ __kernel void coder( __global volatile uint8_t* restrict A,
         // Synchronise before loading the next tile
         barrier(CLK_LOCAL_MEM_FENCE);
     }
+
  
     // Store the final results in C
     #pragma unroll UNROLL_FACTOR
