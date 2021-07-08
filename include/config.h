@@ -14,11 +14,7 @@
 #define COEFF_SIZE BATCH_SIZE
 #define PKT_WITH_COEFF (COEFF_SIZE+PKT_SIZE)
 
-#ifndef DEBUG
-#define BATS_HEADER 0 // sizeof(struct BatsHeader)
-#else
 #define BATS_HEADER 40 // sizeof(struct BatsHeader)
-#endif
 
 #ifndef GCC
 #define uint16_t unsigned short
@@ -29,8 +25,8 @@
 #define TSM 128                // The tile-size in dimension M
 #define TSN 4                // The tile-size in dimension N
 #define TSK 4                 // The tile-size in dimension K
-#define WPTM 8                 // The work-per-thread in dimension M
-#define WPTN 4                 // The work-per-thread in dimension N
+#define WPTM 16                 // The work-per-thread in dimension M
+#define WPTN 2                 // The work-per-thread in dimension N
 #define RTSM (TSM/WPTM)        // The reduced tile-size in dimension M 16
 #define RTSN (TSN/WPTN)        // The reduced tile-size in dimension N
 #define LPTA ((TSK*TSM)/(RTSM*RTSN)) // Loads-per-thread for A 32
@@ -47,4 +43,4 @@
 #define MOD2(x,y) ((x) % (y))
 #define DIV2(x,y) ((x) / (y))
 
-#define UNROLL_FACTOR 2
+#define UNROLL_FACTOR 4

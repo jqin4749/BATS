@@ -50,7 +50,7 @@ void recoder_cof(__global volatile uint8_t* restrict A, // 1040 by 16 (only calc
  
     // Initialise the accumulation register
     uint8_t acc = 0;
-    // test[globalRow] = 1;
+    
     // Loop over all tiles
     const int numTiles = COEFF_SIZE/TS_COF;
     // #pragma unroll 2
@@ -60,7 +60,7 @@ void recoder_cof(__global volatile uint8_t* restrict A, // 1040 by 16 (only calc
         const int tiledRow = TS_COF*t + row;
         const int tiledCol = TS_COF*t + col;
         Asub[col][row] = A[tiledCol*PKT_WITH_COEFF + globalRow + batch_id_glb*PKT_WITH_COEFF*BATCH_SIZE];
-        Bsub[col][row] = B[tiledRow*COEFF_SIZE + globalCol + batch_id_glb*COEFF_SIZE*COEFF_SIZE];
+        Bsub[col][row] = B[globalCol*COEFF_SIZE + tiledRow + batch_id_glb*COEFF_SIZE*COEFF_SIZE];
  
         // Synchronise to make sure the tile is loaded
         barrier(CLK_LOCAL_MEM_FENCE);
@@ -85,7 +85,7 @@ __kernel
 __attribute__((reqd_work_group_size(TSM/WPTM, TSN/WPTN, 1)))  // 10, 1, 1
 __kernel void coder( __global volatile uint8_t* restrict A,
             __global volatile uint8_t* restrict B,
-            __global uint8_t* restrict C,
+            __global volatile uint8_t* restrict C,
             __global volatile uint8_t* restrict common_dim, // multiple of 4
             __global volatile int* restrict sample_idx,
             __global volatile int* restrict common_dim_offsets, 
@@ -102,7 +102,8 @@ __kernel void coder( __global volatile uint8_t* restrict A,
     const int batch_id = get_global_id(2); // max: N_BATCH
  
     // Local memory to fit a tile of A and B
-    __local uint8_t Asub[TSK][TSM];
+    
+    __local uint8_t Asub[TSK][TSM] __attribute__((bank_bits(8,7)));
     __local uint8_t Bsub[TSN][TSK];
  
     // Allocate register space
@@ -127,6 +128,8 @@ __kernel void coder( __global volatile uint8_t* restrict A,
     if(mode == RECODER_ENABLE){
         my_deg = BATCH_SIZE;
         deg_offset = BATCH_SIZE*batch_id;
+        out_dim = BATCH_SIZE ; 
+        out_dim_offset = out_dim*batch_id;
     }  
     else if (mode == DECODER_ENABLE){
         my_deg = common_dim[batch_id];   
@@ -137,6 +140,8 @@ __kernel void coder( __global volatile uint8_t* restrict A,
     else{
         my_deg = common_dim[batch_id];                                                                                          
         deg_offset = common_dim_offsets[batch_id];
+        out_dim = outer_dim ; 
+        out_dim_offset = out_dim*batch_id;   
     }
 
 
@@ -144,10 +149,11 @@ __kernel void coder( __global volatile uint8_t* restrict A,
     // Loop over all tiles
     const int numTiles = my_deg/TSK;
     #pragma ivdep
+    #pragma II 1
     for (int t=0; t<numTiles; t++) {
         // Load one tile of A and B into local memory
         // Load tile A
-        #pragma unroll UNROLL_FACTOR
+        #pragma unroll 
         #pragma ivdep
         for(int j=0;j<TSK;j++){
             int col_tile = j;
@@ -180,7 +186,7 @@ __kernel void coder( __global volatile uint8_t* restrict A,
             }
         }
         // Load title B
-        #pragma unroll UNROLL_FACTOR
+        #pragma unroll
         #pragma ivdep
         for(int j=0;j<WPTN;j++){
             int col_tile = j + local_n*WPTN;
@@ -199,7 +205,7 @@ __kernel void coder( __global volatile uint8_t* restrict A,
         barrier(CLK_LOCAL_MEM_FENCE);
  
         // Loop over the values of a single tile
-        #pragma unroll UNROLL_FACTOR
+        #pragma unroll 
         #pragma ivdep
         for (int k=0; k<TSK; k++) {
             // Cache the values of Bsub in registers
@@ -228,11 +234,14 @@ __kernel void coder( __global volatile uint8_t* restrict A,
 
  
     // Store the final results in C
-    #pragma unroll UNROLL_FACTOR
+    #pragma unroll
     #pragma ivdep
     for(int i=0;i<WPTN;i++){
         int col_global = i + local_n*WPTN + global_n*TSN;
         int idx = output_sample_idx[out_dim_offset + col_global];
+        if(idx == PADDING_ID){
+            continue;
+        }
         #pragma unroll 
         #pragma ivdep
         for(int j=0;j<WPTM;j++){

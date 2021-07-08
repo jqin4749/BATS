@@ -233,3 +233,28 @@ __kernel void coder( __global volatile uint8_t* restrict A,
         }
     }
 }
+
+
+// #pragma unroll 
+//         #pragma ivdep
+//         for(int wm=0;wm<WPTM;wm++){
+//             int row = wm + local_m*WPTM;
+//             #pragma unroll 
+//             #pragma ivdep
+//             for(int k=0;k<TSK;k++){
+//                 Areg[k] = Asub[k][row];
+//             }
+
+//             #pragma unroll 
+//             #pragma ivdep
+//             for(int wn=0;wn<WPTN;wn++){
+//                 int col = wn + local_n*WPTN;
+//                 #pragma unroll 
+//                 #pragma ivdep
+//                 for(int k=0;k<TSK;k++){
+//                     Breg = Bsub[col][k];
+//                     acc[wm][wn] ^= gf_mu_x86(Areg[k] , Breg);
+//                 }
+                
+//             }
+//         }
