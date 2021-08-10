@@ -168,14 +168,10 @@ __kernel void coder( __global volatile uint8_t* restrict A,
             
                 int A_vec = 0;
                 uint8_t A_temp = 0;
-                // if(mode == RECODER_ENABLE){
-                //     A_vec = COEFF_SIZE + col_global*PKT_WITH_COEFF +  row_global + batch_id*PKT_WITH_COEFF*BATCH_SIZE;
-                //     A_temp = A[A_vec];
-                // }
-                // else{
+               
                 A_vec =  idx * PKT_SIZE + row_global;
                 A_temp = A[A_vec];
-                // }
+               
    
                 if(idx == PADDING_ID){
                     Asub[col_tile][row_tile] = 0;
@@ -249,14 +245,8 @@ __kernel void coder( __global volatile uint8_t* restrict A,
             int C_vec = 0;
             uint8_t res = acc[j][i];
             
-            // if(mode == DECODER_ENABLE){
             C_vec = idx * PKT_SIZE + row_global;
-            // }
-            // else{
-            //     C_vec = row_global + BATS_HEADER + COEFF_SIZE + col_global*(PKT_WITH_COEFF+BATS_HEADER)  
-            //                            + batch_id*(PKT_WITH_COEFF+BATS_HEADER)*BATCH_SIZE;
-            // }
-            
+           
             if(add_to_enable){
                     uint8_t c_org =  C[C_vec];
                     res = res ^ c_org;

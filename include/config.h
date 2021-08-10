@@ -2,7 +2,7 @@
 // matrix parameters
 #define PKT_SIZE 1024 // pkt size M
 #define PKT_NUM 64
-#define BATCH_SIZE 16 // batch size N
+#define BATCH_SIZE 4 // batch size N
 #define MAX_DEGREE 20 // K   MAX
 #define N_BATCH 20
 #define MAX_NUM_BATCH N_BATCH // used only at buffer creation
