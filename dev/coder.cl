@@ -59,7 +59,7 @@ void recoder_cof(__global volatile uint8_t* restrict A, // 1040 by 16 (only calc
         // Load one tile of A and B into local memory
         const int tiledRow = TS_COF*t + row;
         const int tiledCol = TS_COF*t + col;
-        Asub[col][row] = A[tiledCol*PKT_WITH_COEFF + globalRow + batch_id_glb*PKT_WITH_COEFF*BATCH_SIZE];
+        Asub[col][row] = A[tiledCol*COEFF_SIZE + globalRow + batch_id_glb*COEFF_SIZE*BATCH_SIZE];
         Bsub[col][row] = B[globalCol*COEFF_SIZE + tiledRow + batch_id_glb*COEFF_SIZE*COEFF_SIZE];
  
         // Synchronise to make sure the tile is loaded
@@ -76,7 +76,7 @@ void recoder_cof(__global volatile uint8_t* restrict A, // 1040 by 16 (only calc
     }
  
     // Store the final result in C
-    C[BATS_HEADER+globalCol*(PKT_WITH_COEFF + BATS_HEADER)+ globalRow + batch_id_glb*(PKT_WITH_COEFF + BATS_HEADER)*BATCH_SIZE] = acc;
+    C[globalCol*(COEFF_SIZE )+ globalRow + batch_id_glb*(COEFF_SIZE)*BATCH_SIZE] = acc;
     
 }
 
@@ -125,24 +125,24 @@ __kernel void coder( __global volatile uint8_t* restrict A,
     }
 
     // load degrees and calculate offsets
-    if(mode == RECODER_ENABLE){
-        my_deg = BATCH_SIZE;
-        deg_offset = BATCH_SIZE*batch_id;
-        out_dim = BATCH_SIZE ; 
-        out_dim_offset = out_dim*batch_id;
-    }  
-    else if (mode == DECODER_ENABLE){
-        my_deg = common_dim[batch_id];   
-        deg_offset = common_dim_offsets[batch_id];
-        out_dim = outer_dim ; 
-        out_dim_offset = out_dim*batch_id;                                                       
-    }  
-    else{
+    // if(mode == RECODER_ENABLE){
+    //     my_deg = BATCH_SIZE;
+    //     deg_offset = BATCH_SIZE*batch_id;
+    //     out_dim = BATCH_SIZE ; 
+    //     out_dim_offset = out_dim*batch_id;
+    // }  
+    // else if (mode == DECODER_ENABLE){
+    //     my_deg = common_dim[batch_id];   
+    //     deg_offset = common_dim_offsets[batch_id];
+    //     out_dim = outer_dim ; 
+    //     out_dim_offset = out_dim*batch_id;                                                       
+    // }  
+    // else{
         my_deg = common_dim[batch_id];                                                                                          
         deg_offset = common_dim_offsets[batch_id];
         out_dim = outer_dim ; 
         out_dim_offset = out_dim*batch_id;   
-    }
+    // }
 
 
     
@@ -168,14 +168,14 @@ __kernel void coder( __global volatile uint8_t* restrict A,
             
                 int A_vec = 0;
                 uint8_t A_temp = 0;
-                if(mode == RECODER_ENABLE){
-                    A_vec = COEFF_SIZE + col_global*PKT_WITH_COEFF +  row_global + batch_id*PKT_WITH_COEFF*BATCH_SIZE;
-                    A_temp = A[A_vec];
-                }
-                else{
-                    A_vec =  idx * PKT_SIZE + row_global;
-                    A_temp = A[A_vec];
-                }
+                // if(mode == RECODER_ENABLE){
+                //     A_vec = COEFF_SIZE + col_global*PKT_WITH_COEFF +  row_global + batch_id*PKT_WITH_COEFF*BATCH_SIZE;
+                //     A_temp = A[A_vec];
+                // }
+                // else{
+                A_vec =  idx * PKT_SIZE + row_global;
+                A_temp = A[A_vec];
+                // }
    
                 if(idx == PADDING_ID){
                     Asub[col_tile][row_tile] = 0;
@@ -249,13 +249,13 @@ __kernel void coder( __global volatile uint8_t* restrict A,
             int C_vec = 0;
             uint8_t res = acc[j][i];
             
-            if(mode == DECODER_ENABLE){
-                C_vec = idx * PKT_SIZE + row_global;
-            }
-            else{
-                C_vec = row_global + BATS_HEADER + COEFF_SIZE + col_global*(PKT_WITH_COEFF+BATS_HEADER)  
-                                       + batch_id*(PKT_WITH_COEFF+BATS_HEADER)*BATCH_SIZE;
-            }
+            // if(mode == DECODER_ENABLE){
+            C_vec = idx * PKT_SIZE + row_global;
+            // }
+            // else{
+            //     C_vec = row_global + BATS_HEADER + COEFF_SIZE + col_global*(PKT_WITH_COEFF+BATS_HEADER)  
+            //                            + batch_id*(PKT_WITH_COEFF+BATS_HEADER)*BATCH_SIZE;
+            // }
             
             if(add_to_enable){
                     uint8_t c_org =  C[C_vec];
