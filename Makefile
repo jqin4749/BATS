@@ -56,7 +56,7 @@ CXX := arm-linux-gnueabihf-g++
 # Target
 TARGET := host
 TARGET_DIR := ../bin
-TARGET_FPGA := myGEMM6
+TARGET_FPGA := coder
 # Directories
 INC_DIRS := ../common/inc ./include 
 LIB_DIRS := 
@@ -79,11 +79,11 @@ $(TARGET_DIR)/$(TARGET) : Makefile $(SRCS) $(INCS) $(TARGET_DIR)
 $(TARGET_DIR) :
 	$(ECHO)mkdir $(TARGET_DIR)
 FPGA :
-	aoc dev/myGEMM6.cl -o ../bin/myGEMM6 -I include 
+	aoc dev/coder.cl -o ../bin/coder -I include 
 	rm -r ~/sopc_altera*
 
 FPGA-profile :
-	aoc -profile dev/myGEMM6.cl -o ../bin/profile/myGEMM6 -I include 
+	aoc -profile dev/coder.cl -o ../bin/profile/coder -I include 
 	rm -r ~/sopc_altera*
 
 FPGA-report :
