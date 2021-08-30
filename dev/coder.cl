@@ -1,33 +1,20 @@
 #include "config.h"
 
 uint8_t gf_mu_x86(uint8_t a, uint8_t b) {
-	uint8_t p = 0; /* the product of the multiplication */
-    #pragma unroll
-	for (int i=0;i<8;i++){
-            if (b & 1) /* if b is odd, then add the corresponding a to p (final product = sum of all a's corresponding to odd b's) */
-                p ^= a; /* since we're in GF(2^m), addition is an XOR */
+	uint8_t p[9];
+    uint8_t ta[9];
 
-            if (a & 0x80) /* GF modulo: if a >= 128, then it will overflow when shifted left, so reduce */
-                a = (a << 1) ^ 0x11D; /* XOR with the primitive polynomial x^8 + x^4 + x^3 + x + 1 (0b1_0001_1011) – you can change it but it must be irreducible */
-            else
-                a <<= 1; /* equivalent to a*2 */
-            b >>= 1; /* equivalent to b // 2 */
-            
-	}
-	return p;
+    ta[0] = a;
+    p[0] = 0;
+    // #pragma ii 1
+    #pragma unroll
+    for (int i=0;i<8;i++) {
+        p[i+1] = p[i] ^ (-(b>>i & 1) & ta[i]);
+	    ta[i+1] = (-(ta[i]>>7) & 0x11D) ^ (ta[i]<<1);
+    }
+    return p[8];
 }
 
-
-
-// int address_interpretor(int x, int y, int offset, __global volatile int* restrict sample_idx){
-//     // use x to find index of required packet (file space) in sample_idx    
-//     int file_pkt_idx = sample_idx[offset+x];
-//     if(file_pkt_idx == PADDING_ID){
-//         return PADDING_ID;
-//     }
-//     // calculate idx of required data in file space
-//     return file_pkt_idx*(PKT_SIZE) + y;
-// }
 
 __kernel
 __attribute__((reqd_work_group_size(TS_COF, TS_COF, 1))) 
@@ -125,27 +112,12 @@ __kernel void coder( __global volatile uint8_t* restrict A,
     }
 
     // load degrees and calculate offsets
-    // if(mode == RECODER_ENABLE){
-    //     my_deg = BATCH_SIZE;
-    //     deg_offset = BATCH_SIZE*batch_id;
-    //     out_dim = BATCH_SIZE ; 
-    //     out_dim_offset = out_dim*batch_id;
-    // }  
-    // else if (mode == DECODER_ENABLE){
-    //     my_deg = common_dim[batch_id];   
-    //     deg_offset = common_dim_offsets[batch_id];
-    //     out_dim = outer_dim ; 
-    //     out_dim_offset = out_dim*batch_id;                                                       
-    // }  
-    // else{
-        my_deg = common_dim[batch_id];                                                                                          
-        deg_offset = common_dim_offsets[batch_id];
-        out_dim = outer_dim ; 
-        out_dim_offset = out_dim*batch_id;   
-    // }
+   
+    my_deg = common_dim[batch_id];                                                                                          
+    deg_offset = common_dim_offsets[batch_id];
+    out_dim = outer_dim ; 
+    out_dim_offset = out_dim*batch_id;   
 
-
-    
     // Loop over all tiles
     const int numTiles = my_deg/TSK;
     #pragma ivdep
@@ -235,23 +207,23 @@ __kernel void coder( __global volatile uint8_t* restrict A,
     for(int i=0;i<WPTN;i++){
         int col_global = i + local_n*WPTN + global_n*TSN;
         int idx = output_sample_idx[out_dim_offset + col_global];
-        if(idx == PADDING_ID){
-            continue;
-        }
+        
         #pragma unroll 
         #pragma ivdep
         for(int j=0;j<WPTM;j++){
             int row_global = j + local_m*WPTM + global_m*TSM;
             int C_vec = 0;
             uint8_t res = acc[j][i];
-            
+             
             C_vec = idx * PKT_SIZE + row_global;
            
             if(add_to_enable){
-                    uint8_t c_org =  C[C_vec];
-                    res = res ^ c_org;
+                uint8_t c_org =  C[C_vec];
+                res = res ^ c_org;
             }
-            C[C_vec] = res;
+            if(C_vec >= 0){
+                C[C_vec] = res;
+            }
         }
     }
 }
